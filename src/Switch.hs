@@ -14,7 +14,6 @@ import qualified Data.Char as C
 import qualified Data.Maybe as Maybe
 import qualified Utils as U
 
-import Data.List(foldl')
 import Data.Bits
 
 import Debug.Trace
@@ -34,13 +33,13 @@ data SwitchTargets =
 
 mkSwitchTargets :: Bool -> (Integer, Integer) -> Maybe Label -> M.Map Integer Label -> SwitchTargets
 mkSwitchTargets signed range defLabel intToLabel
-  = SwitchTargets signed range defLabel intToLabel (calcRevMap intToLabel) (M.toList intToLabel)
+  = SwitchTargets signed range defLabel intToLabel (U.calcRevMap intToLabel) (M.toList intToLabel)
 
 newtype Label = L Integer
   deriving (Eq, Ord)
 
 instance Show Label where
-  show :: Label -> String 
+  show :: Label -> String
   show (L n) = "L" ++ show n
 
 bytesInWordForPlatform :: Int
@@ -53,7 +52,7 @@ zeros :: String
 zeros = replicate bitsInWordForPlatform '0'
 
 instance Show BitTestInfo where
-  show :: BitTestInfo -> String 
+  show :: BitTestInfo -> String
   show BitTestInfo { offset, magicConstant, bitTestFailedPlan }
     = "BitTestInfo { offset = "
         ++ show offset
@@ -83,41 +82,6 @@ data SwitchPlan
   deriving Show
 
 newtype Platform = Platform Int
-
-calcMagicConstant :: [Integer] -> Integer -> Integer
-calcMagicConstant xs bitsInWord = c
-  where
-    one = 1 :: Integer
-    bitsInW = bitsInWord - 1
-    c = foldl' (\acc x -> acc .|. shiftToPos x) (0 :: Integer) xs
-    shiftToPos n = one `shiftL` fromIntegral (bitsInW - n)
-
-calcRevMap :: M.Map Integer Label -> M.Map Label [Integer]
-calcRevMap = M.foldrWithKey' (\n label m -> M.insertWith (++) label [n] m) M.empty
-
-isDense :: [Integer] -> Bool
-isDense [] = True
-isDense ns = len == span
-  where
-    firstNum = head ns
-    (len, lastNum) = go ns 1
-    span = fromIntegral (lastNum - firstNum) + 1
-
-    go :: [Integer] -> Int -> (Int, Integer)
-    go [n] !len = (len, n)
-    go (_ : ns) !len = go ns (len + 1)
-    go [] _ = error "The improssible happened!"
-
-isDenseEnough :: Integer -> [Integer] -> Bool
-isDenseEnough _gap [] = True
-isDenseEnough gap (cur : ns)
-  = go cur ns
-  where
-    go prev (cur : ns) = cur - prev <= gap && go cur ns
-    go _prev [] = True
-
-ind :: Bool -> Int 
-ind b = if b then 1 else 0
 
 platformWordSizeInBytes :: Platform -> Int
 platformWordSizeInBytes (Platform n) = n
@@ -176,8 +140,8 @@ createBitTestForTwoLabelsNoDefault
       label1Ints = case M.lookup label1 labelToInts of { Just ns -> ns; Nothing -> error "The improssible happened" }
       label2Ints = case M.lookup label2 labelToInts of { Just ns -> ns; Nothing -> error "The improssible happened" }
 
-      region1IsDense = isDense label1Ints
-      region2IsDense = isDense label2Ints
+      region1IsDense = U.isDense label1Ints
+      region2IsDense = U.isDense label2Ints
 
       region1Lb = head label1Ints
       region1Ub = last label1Ints
@@ -197,8 +161,8 @@ createBitTestForTwoLabelsNoDefault
       doLeftCheckRegion2 = lb < region2Lb
       doRightCheckRegion2 = ub > region2Ub
 
-      numChecksForRegion1 = ind doLeftCheckRegion1 + ind doRightCheckRegion1
-      numChecksForRegion2 = ind doLeftCheckRegion2 + ind doRightCheckRegion2
+      numChecksForRegion1 = U.ind doLeftCheckRegion1 + U.ind doRightCheckRegion1
+      numChecksForRegion2 = U.ind doLeftCheckRegion2 + U.ind doRightCheckRegion2
 
       lab1Plan = Unconditionally label1
       lab2Plan = Unconditionally label2
@@ -229,8 +193,8 @@ createBitTestForTwoLabelsNoDefault
 
          | otherwise ->
            let
-             region1Score = ind (span1 > bitsInWord) * 10 + numChecksForRegion1
-             region2Score = ind (span2 > bitsInWord) * 10 + numChecksForRegion2
+             region1Score = U.ind (span1 > bitsInWord) * 10 + numChecksForRegion1
+             region2Score = U.ind (span2 > bitsInWord) * 10 + numChecksForRegion2
 
              minScore = min region1Score region2Score
            in
@@ -262,7 +226,7 @@ createBitTestForTwoLabelsWithDefault
       totalSpan = fromIntegral (ub - lb + 1)
 
       intsGoingToDefaultLabel = Maybe.fromMaybe [] (M.lookup defLabel labelToInts)
-      intToLabel' = foldl' (flip M.delete) intToLabel intsGoingToDefaultLabel
+      intToLabel' = L.foldl' (flip M.delete) intToLabel intsGoingToDefaultLabel
       labelToInts' = M.delete defLabel labelToInts
     in
       if totalSpan <= maxSizeOfSpanForDefaultExpand
@@ -270,7 +234,7 @@ createBitTestForTwoLabelsWithDefault
         let
           numLabelForDefault = [(i, defLabel) | i <- [lb..ub], not (i `M.member` intToLabel')]
 
-          intToLabel'' = foldl' (\m (i, l) -> M.insert i l m) intToLabel' numLabelForDefault
+          intToLabel'' = L.foldl' (\m (i, l) -> M.insert i l m) intToLabel' numLabelForDefault
           labelToInts'' = M.insert defLabel (fst <$> numLabelForDefault) labelToInts'
                         
           st' = SwitchTargets signed range Nothing intToLabel'' labelToInts'' (M.toList intToLabel'')
@@ -280,7 +244,7 @@ createBitTestForTwoLabelsWithDefault
         let
           labelInts = case M.lookup label labelToInts' of { Just ns -> ns; Nothing -> error "The improssible happened" }
           regionCount = length labelInts
-          regionIsDense = isDense labelInts
+          regionIsDense = U.isDense labelInts
 
           regionLb = head labelInts
           regionUb = last labelInts
@@ -288,7 +252,7 @@ createBitTestForTwoLabelsWithDefault
           doLeftCheckRegion = lb < regionLb
           doRightCheckRegion = ub > regionUb
 
-          numChecksForRegion = ind doLeftCheckRegion + ind doRightCheckRegion
+          numChecksForRegion = U.ind doLeftCheckRegion + U.ind doRightCheckRegion
 
           labPlan = Unconditionally label
           defPlan = Unconditionally defLabel
@@ -296,7 +260,7 @@ createBitTestForTwoLabelsWithDefault
 
           spanOfRegion = regionUb - regionLb + 1
         in
-          if | regionCount == 1 -> Just $ IfEqual (head labelInts) label $ defPlan
+          if | regionCount == 1 -> Just $ IfEqual (head labelInts) label defPlan
              | regionIsDense ->
                  Just $ cbp signed doLeftCheckRegion defPlanOpt doRightCheckRegion defPlanOpt labPlan regionLb regionUb
              | regionCount == 2 -> Just $ createEqPlan labelInts label defLabel
@@ -375,7 +339,7 @@ createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel l
       
     in
       if | M.size intToLabel < minJumpTableSize -> Nothing
-         | not (isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
+         | not (U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
          | otherwise -> undefined
 
 cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan 
@@ -388,7 +352,7 @@ cbp signed doLeftCheck leftPlan doRightCheck rightPlan
 
 createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
 createEqPlan labelInts lab1 lab2
-  = foldl' (\plan n -> IfEqual n lab1 plan) (Unconditionally lab2) labelInts
+  = L.foldl' (\plan n -> IfEqual n lab1 plan) (Unconditionally lab2) labelInts
 
 createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
 createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord
@@ -396,7 +360,7 @@ createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWo
       canSkipOffset = regionLb >= 0 && regionUb < bitsInWord
       (offset, constants) = if canSkipOffset then (Nothing, intsOfLabel)
                             else (Just regionLb, (\n -> n - regionLb) <$> intsOfLabel)
-      magicConstant = calcMagicConstant constants bitsInWord
+      magicConstant = U.calcMagicConstant constants bitsInWord
       otherLabelPlan = Unconditionally otherLabel
       bitTestInfo = BitTestInfo { offset = offset
                                 , magicConstant = magicConstant
