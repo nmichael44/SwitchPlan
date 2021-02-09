@@ -250,7 +250,6 @@ createBitTestForTwoLabelsNoDefault
 maxSizeOfSpanForDefaultExpand :: Int
 maxSizeOfSpanForDefaultExpand = 256
 
--- defLabel is one of { label1, label2 }
 createBitTestForTwoLabelsWithDefault :: SwitchTargets -> Label -> Integer -> Maybe SwitchPlan
 createBitTestForTwoLabelsWithDefault
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
