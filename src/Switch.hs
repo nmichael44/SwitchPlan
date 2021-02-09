@@ -46,6 +46,7 @@ instance Show Label where
 bytesInWordForPlatform :: Int
 bytesInWordForPlatform = 8
 
+bitsInWordForPlatform :: Int
 bitsInWordForPlatform = bytesInWordForPlatform * 8
 
 zeros :: String
@@ -107,9 +108,9 @@ isDense ns = len == span
     go (_ : ns) !len = go ns (len + 1)
     go [] _ = error "The improssible happened!"
 
-isAlmostDense :: Integer -> [Integer] -> Bool
-isAlmostDense _gap [] = True
-isAlmostDense gap (cur : ns)
+isDenseEnough :: Integer -> [Integer] -> Bool
+isDenseEnough _gap [] = True
+isDenseEnough gap (cur : ns)
   = go cur ns
   where
     go prev (cur : ns) = cur - prev <= gap && go cur ns
@@ -291,12 +292,11 @@ createBitTestForTwoLabelsWithDefault
 
           labPlan = Unconditionally label
           defPlan = Unconditionally defLabel
-          labPlanOpt = Just labPlan
           defPlanOpt = Just defPlan
 
           spanOfRegion = regionUb - regionLb + 1
         in
-          if | regionCount == 1 -> Just $ IfEqual (head labelInts) label $ Unconditionally defLabel
+          if | regionCount == 1 -> Just $ IfEqual (head labelInts) label $ defPlan
              | regionIsDense ->
                  Just $ cbp signed doLeftCheckRegion defPlanOpt doRightCheckRegion defPlanOpt labPlan regionLb regionUb
              | regionCount == 2 -> Just $ createEqPlan labelInts label defLabel
@@ -360,9 +360,23 @@ createGeneralBitTest
   bitsInWord
  = undefined
 
+maxJumpTableGapSize :: Integer
+maxJumpTableGapSize = 6
+
+minJumpTableSize :: Int
+minJumpTableSize = 5
+
+minJumpTableOffset :: Integer
+minJumpTableOffset = 2
+
 createJumpTable :: SwitchTargets -> Maybe SwitchPlan
-createJumpTable (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
-  = undefined
+createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
+  = let
+      
+    in
+      if | M.size intToLabel < minJumpTableSize -> Nothing
+         | not (isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
+         | otherwise -> undefined
 
 cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan 
        -> Integer -> Integer -> SwitchPlan
