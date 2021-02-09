@@ -12,6 +12,7 @@ import qualified Data.List as L
 import qualified Numeric as N
 import qualified Data.Char as C
 import qualified Data.Maybe as Maybe
+import qualified Utils as U
 
 import Data.List(foldl')
 import Data.Bits
@@ -308,26 +309,21 @@ createBitTestForTwoLabelsWithDefault
 
 newtype T = T (Maybe (Label, Integer, Bool, Bool))
 
-instance Eq T where
-  (T Nothing) == (T Nothing) = True 
-  (T (Just (_, _, eqLb, eqUb))) == (T (Just (_, _, eqLb', eqUb'))) = eqLb == eqLb' && eqUb == eqUb'
-  _ == _ = False
- 
-instance Ord T where
-  compare (T Nothing) (T Nothing) = EQ 
-  compare (T Nothing) (T (Just _)) = LT
-  compare (T (Just _)) (T Nothing) = GT 
-  compare (T (Just (lab, n, eqLb, eqUb))) (T (Just (lab', n', eqLb', eqUb')))
-    = case compare eqLb eqLb' of
-        EQ -> compare eqUb eqUb'
-        x -> x
+compT :: T -> T -> Ordering
+compT (T Nothing) (T Nothing) = EQ 
+compT (T Nothing) (T (Just _)) = LT
+compT (T (Just _)) (T Nothing) = GT 
+compT (T (Just (lab, n, eqLb, eqUb))) (T (Just (lab', n', eqLb', eqUb')))
+  = case compare eqLb eqLb' of
+      EQ -> compare eqUb eqUb'
+      x -> x
 
 createThreeValPlanNoDefault :: SwitchTargets -> Platform -> Maybe SwitchPlan
 createThreeValPlanNoDefault
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
   platform
   = if Maybe.isJust defLabelOpt || M.size labelToInts /= 3
-    then trace (show (M.size labelToInts)) Nothing
+    then Nothing
     else
       let
         [(lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)] = M.toList labelToInts
@@ -335,7 +331,7 @@ createThreeValPlanNoDefault
         classLab2 = classifyCandidate lab2 label2Ints
         classLab3 = classifyCandidate lab3 label3Ints
 
-        candidate = max classLab1 (max classLab2 classLab3)
+        candidate = U.maxBy compT classLab1 (U.maxBy compT classLab2 classLab3)
       in
         case candidate of
           (T (Just (lab, n, eqLb, eqUb))) -> Just $ createFullPlan lab n eqLb eqUb
