@@ -73,6 +73,7 @@ findRegionSeparators _gap [] = error "Must never be called on an empty list."
 -- Finds the middle element of a list.
 -- If the list has even size then it returns the element on the right of middle.
 -- Throws an exception on an empty list.
+{-# INLINABLE findMiddleOfList #-}
 findMiddleOfList :: [a] -> a
 findMiddleOfList ns
   = go ns ns
