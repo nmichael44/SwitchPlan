@@ -1,7 +1,17 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Utils where
+module Utils (
+  maxBy
+  , minBy
+  , calcMagicConstant
+  , calcRevMap
+  , isDense
+  , isDenseEnough
+  , ind
+  , findRegionSeparators
+  , findMiddleOfList)
+where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
@@ -30,11 +40,11 @@ calcRevMap = M.foldrWithKey' (\n label m -> M.insertWith (++) label [n] m) M.emp
 {-# INLINABLE isDense #-}
 isDense :: [Integer] -> Bool
 isDense [] = True
-isDense ns = len == span
+isDense ys = lenList == regionSpan
   where
-    firstNum = head ns
-    (len, lastNum) = go ns 1
-    span = fromIntegral (lastNum - firstNum) + 1
+    firstNum = head ys
+    (lenList, lastNum) = go ys 1
+    regionSpan = fromIntegral (lastNum - firstNum) + 1
 
     go :: [Integer] -> Int -> (Int, Integer)
     go [n] !len = (len, n)
@@ -44,9 +54,9 @@ isDense ns = len == span
 {-# INLINABLE isDenseEnough #-}
 isDenseEnough :: Integer -> [Integer] -> Bool
 isDenseEnough _gap [] = True
-isDenseEnough gap (cur : ns) = go cur ns
+isDenseEnough gap (current : ns) = go current ns
   where
-    go prev (cur : ns) = cur - prev <= gap && go cur ns
+    go prev (cur : xs) = cur - prev <= gap && go cur xs
     go _prev [] = True
 
 {-# INLINABLE ind #-}
@@ -59,3 +69,15 @@ ind b = if b then 1 else 0
 findRegionSeparators :: (Num a, Ord a) => a -> [a] -> [a]
 findRegionSeparators gap ns@(start : _)  = start : [y | (x, y) <- zip ns (tail ns), y - x >= gap]
 findRegionSeparators _gap [] = error "Must never be called on an empty list."
+
+-- Finds the middle element of a list.
+-- If the list has even size then it returns the element on the right of middle.
+-- Throws an exception on an empty list.
+findMiddleOfList :: [a] -> a
+findMiddleOfList ns
+  = go ns ns
+  where
+    go (x : _) [] = x
+    go (x : _) [_] = x
+    go (_ : xs) (_ : _ : ys) = go xs ys
+    go [] _ = error "Must never be called on an empty list."
