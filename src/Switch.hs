@@ -105,10 +105,12 @@ createPlan st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelT
          -> plan
 
        | otherwise ->
+         let (stLeft, n, stRight) = splitInterval st platform
            -- split the interval in two in an intelligent way
            -- and recurce twice to finish the job
            -- returning something like if (x < expr) then plan1 else plan2
-           undefined
+         in
+           IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
   where
     bitsInWord = 8 * fromIntegral (platformWordSizeInBytes platform)
 
@@ -341,7 +343,7 @@ createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel l
           spanOfFullRegion = ub - lb + 1
         in
           if spanOfFullRegion <= maxExpandSizeForDefault
-          then go (expandRegion st lb ub defLabel) True lb ub
+          then go (expandRegion st lb ub) True
           else
             let
               (regionLb, _) = M.findMin intToLabel
@@ -349,26 +351,30 @@ createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel l
               spanOfCases = regionUb - regionLb + 1
             in
               if spanOfCases <= maxExpandSizeForDefault
-              then go (expandRegion st regionLb regionUb defLabel) True regionLb regionUb
-              else go st False regionLb regionUb
-      Nothing -> go st True lb ub
+              then go (expandRegion st regionLb regionUb) True
+              else go st False
+      Nothing -> go st True
   where
-    go :: SwitchTargets -> Bool -> Integer -> Integer -> Maybe SwitchPlan
-    go st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) hasBeenExpanded intToLabelMin intToLabelMax
+    go :: SwitchTargets -> Bool -> Maybe SwitchPlan
+    go st@(SwitchTargets _signed _range _defLabelOpt intToLabel _labelToInts _intLabelList) hasBeenExpanded
       = let
           numCases = M.size intToLabel
         in
           if | numCases < minJumpTableSize -> Nothing
              | not hasBeenExpanded && not (U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
-             | otherwise ->
-                 Just $
-                 JumpTable $
-                 if intToLabelMin == lb && intToLabelMax == ub
-                 then SwitchTargets signed range Nothing intToLabel labelToInts intLabelList
-                 else st
+             | otherwise -> Just $ JumpTable st
 
-expandRegion :: SwitchTargets -> Integer -> Integer -> Label -> SwitchTargets
-expandRegion (SwitchTargets signed range defLabelOpt intToLabel labelToInts intLabelList) regLb regUb defLabel
+splitInterval :: SwitchTargets -> Platform -> (SwitchTargets, Integer, SwitchTargets)
+splitInterval (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) platform
+  = let
+      
+    in
+      undefined
+    
+
+
+expandRegion :: SwitchTargets -> Integer -> Integer -> SwitchTargets
+expandRegion (SwitchTargets signed range@(lb, ub) defLabelOpt@(Just defLabel) intToLabel labelToInts intLabelList) regLb regUb
   = let
       existingIntsGointToDefault = Maybe.fromMaybe [] $ M.lookup defLabel labelToInts
       intToLabel' = L.foldl' (flip M.delete) intToLabel existingIntsGointToDefault
@@ -378,8 +384,12 @@ expandRegion (SwitchTargets signed range defLabelOpt intToLabel labelToInts intL
 
       intToLabel'' = L.foldl' (\m (i, l) -> M.insert i l m) intToLabel' numCasesForDefault
       labelToInts'' = M.insert defLabel (fst <$> numCasesForDefault) labelToInts'
+
+      defl = if regLb == lb && regUb == ub then Nothing else defLabelOpt
     in
-      SwitchTargets signed range Nothing intToLabel'' labelToInts'' (M.toList intToLabel'')
+      SwitchTargets signed range defl intToLabel'' labelToInts'' (M.toList intToLabel'')
+
+expandRegion (SwitchTargets _ _ Nothing _ _ _) _ _ = error "The impossible happened!"
 
 cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan 
        -> Integer -> Integer -> SwitchPlan
@@ -432,8 +442,8 @@ lab3 :: Label
 lab3 = L 3
 
 st1 :: SwitchTargets
-st1 = mkSwitchTargets True (1,6) (Just lab3)
-       (M.fromList [(1, lab1), (3, lab2), (4, lab1)])
+st1 = mkSwitchTargets True (1,10) (Just lab3)
+       (M.fromList [(3, lab2), (6, lab1), (7, lab1)])
 pl = Platform 64
 
 {-
