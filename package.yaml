@@ -25,6 +25,11 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:
+  - -Wall
+  - -Wincomplete-uni-patterns
+  - -Wpartial-fields
+  - -O2
 
 executables:
   SwitchPlan-exe:
