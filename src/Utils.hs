@@ -52,3 +52,10 @@ isDenseEnough gap (cur : ns) = go cur ns
 {-# INLINABLE ind #-}
 ind :: Bool -> Int 
 ind b = if b then 1 else 0
+
+-- Returns a list of all the start elements of the various regions of the list
+-- e.g. findRegionSeparators 2 [1,2, 4, 6,7,8, 10,11]   ==>  [1, 4, 6, 10]
+{-# INLINABLE findRegionSeparators #-}
+findRegionSeparators :: (Num a, Ord a) => a -> [a] -> [a]
+findRegionSeparators gap ns@(start : _)  = start : [y | (x, y) <- zip ns (tail ns), y - x >= gap]
+findRegionSeparators _gap [] = error "Must never be called on an empty list."
