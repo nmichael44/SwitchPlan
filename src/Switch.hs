@@ -213,8 +213,8 @@ createBitTestForTwoLabelsNoDefault
                         (createBitTestPlan label2 label2Ints region2Lb region2Ub label1 bitsInWord)
                         region2Lb region2Ub
 
-maxSizeOfSpanForDefaultExpand :: Int
-maxSizeOfSpanForDefaultExpand = 256
+maxExpandSizeForDefault :: Integer
+maxExpandSizeForDefault = 128
 
 createBitTestForTwoLabelsWithDefault :: SwitchTargets -> Label -> Integer -> Maybe SwitchPlan
 createBitTestForTwoLabelsWithDefault
@@ -223,13 +223,13 @@ createBitTestForTwoLabelsWithDefault
     bitsInWord
   = let
       defLabel = Maybe.fromJust defLabelOpt
-      totalSpan = fromIntegral (ub - lb + 1)
+      totalSpan = ub - lb + 1
 
       intsGoingToDefaultLabel = Maybe.fromMaybe [] (M.lookup defLabel labelToInts)
       intToLabel' = L.foldl' (flip M.delete) intToLabel intsGoingToDefaultLabel
       labelToInts' = M.delete defLabel labelToInts
     in
-      if totalSpan <= maxSizeOfSpanForDefaultExpand
+      if totalSpan <= maxExpandSizeForDefault
       then
         let
           numLabelForDefault = [(i, defLabel) | i <- [lb..ub], not (i `M.member` intToLabel')]
@@ -242,7 +242,7 @@ createBitTestForTwoLabelsWithDefault
            createBitTestForTwoLabelsNoDefault st' label defLabel bitsInWord
       else
         let
-          labelInts = case M.lookup label labelToInts' of { Just ns -> ns; Nothing -> error "The improssible happened" }
+          labelInts = case M.lookup label labelToInts' of { Just ns -> ns; Nothing -> error "The impossible happened!" }
           regionCount = length labelInts
           regionIsDense = U.isDense labelInts
 
@@ -335,12 +335,51 @@ minJumpTableOffset = 2
 
 createJumpTable :: SwitchTargets -> Maybe SwitchPlan
 createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
+  = case defLabelOpt of
+      Just defLabel ->
+        let
+          spanOfFullRegion = ub - lb + 1
+        in
+          if spanOfFullRegion <= maxExpandSizeForDefault
+          then go (expandRegion st lb ub defLabel) True lb ub
+          else
+            let
+              (regionLb, _) = M.findMin intToLabel
+              (regionUb, _) = M.findMax intToLabel
+              spanOfCases = regionUb - regionLb + 1
+            in
+              if spanOfCases <= maxExpandSizeForDefault
+              then go (expandRegion st regionLb regionUb defLabel) True regionLb regionUb
+              else go st False regionLb regionUb
+      Nothing -> go st True lb ub
+  where
+    go :: SwitchTargets -> Bool -> Integer -> Integer -> Maybe SwitchPlan
+    go st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) hasBeenExpanded intToLabelMin intToLabelMax
+      = let
+          numCases = M.size intToLabel
+        in
+          if | numCases < minJumpTableSize -> Nothing
+             | not hasBeenExpanded && not (U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
+             | otherwise ->
+                 Just $
+                 JumpTable $
+                 if intToLabelMin == lb && intToLabelMax == ub
+                 then SwitchTargets signed range Nothing intToLabel labelToInts intLabelList
+                 else st
+
+expandRegion :: SwitchTargets -> Integer -> Integer -> Label -> SwitchTargets
+expandRegion (SwitchTargets signed range defLabelOpt intToLabel labelToInts intLabelList) regLb regUb defLabel
   = let
-      
+      existingIntsGointToDefault = Maybe.fromMaybe [] $ M.lookup defLabel labelToInts
+      intToLabel' = L.foldl' (flip M.delete) intToLabel existingIntsGointToDefault
+      labelToInts' = M.delete defLabel labelToInts
+
+      numCasesForDefault = [(i, defLabel) | i <- [regLb..regUb], not (i `M.member` intToLabel')]
+
+      intToLabel'' = L.foldl' (\m (i, l) -> M.insert i l m) intToLabel' numCasesForDefault
+      labelToInts'' = M.insert defLabel (fst <$> numCasesForDefault) labelToInts'
     in
-      if | M.size intToLabel < minJumpTableSize -> Nothing
-         | not (U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
-         | otherwise -> undefined
+      SwitchTargets signed range Nothing intToLabel'' labelToInts'' (M.toList intToLabel'')
 
 cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan 
        -> Integer -> Integer -> SwitchPlan
@@ -393,8 +432,8 @@ lab3 :: Label
 lab3 = L 3
 
 st1 :: SwitchTargets
-st1 = mkSwitchTargets True (1,3) (Just lab3)
-       (M.fromList [(1, lab1), (2, lab2)])
+st1 = mkSwitchTargets True (1,6) (Just lab3)
+       (M.fromList [(1, lab1), (3, lab2), (4, lab1)])
 pl = Platform 64
 
 {-
