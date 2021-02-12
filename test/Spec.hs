@@ -130,10 +130,11 @@ doTest2 start end platform st plan
           res = EV.eval platform plan start'
           expectedRes = case M.lookup start' intToLabel of { Just lab -> lab; Nothing -> error "Unthinkable!" }
         in
-          (if res /= expectedRes
-          then trace ("\nstart: " ++ show start' ++ " res: " ++ show res ++ " expectedRes: " ++ show expectedRes ++ "\nplan: " ++ show plan ++ "\nintToLabel: " ++ show intToLabel ++ "\nlabelToInt: " ++ show labelToInts)
-          else id)
-          (res == expectedRes && go (start + 1))
+          case res of
+            Left errStr -> trace ("errStr: " ++ errStr) False
+            Right res ->
+              (if res /= expectedRes then trace ("\nstart: " ++ show start' ++ " res: " ++ show res ++ " expectedRes: " ++ show expectedRes ++ "\nplan: " ++ show plan ++ "\nintToLabel: " ++ show intToLabel ++ "\nlabelToInt: " ++ show labelToInts) else id)
+              (res == expectedRes && go (start + 1))
 
 m:: Int
 m = 4

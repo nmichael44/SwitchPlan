@@ -9,10 +9,11 @@ module UnitTests where
 import qualified Data.Map.Lazy as M
 import qualified Data.Set as S
 import qualified Data.Maybe as Maybe
+import qualified Data.Either as Either
 import qualified Switch as SW
 import qualified Eval as EV
 import qualified Utils as U
-
+import Control.Monad ( when, unless )
 import Debug.Trace ( trace )
 
 type Label = SW.Label 
@@ -25,41 +26,51 @@ newtype DataTypeRange = DTR (Integer, Integer)
 newtype TestingRange = TR (Integer, Integer)
 
 data TestInputs = TI [PieceOfCase] DataTypeRange TestingRange SW.Platform
-data TestCase = TC DataTypeRange TestingRange SW.SwitchTargets SW.Platform
+data TestCase = TC Int DataTypeRange TestingRange SW.SwitchTargets SW.Platform
 
-mkTestCase :: TestInputs -> TestCase
-mkTestCase (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platform)
-  = let
-      fullSet = S.fromAscList [lb..ub]
-      intToLabel =
-        case U.buildMap (cases >>= \case { (C i l) -> [(i, l)]; _ -> [] }) of
-          Left err -> error err
-          Right m -> m
-      numCases = M.size intToLabel
+mkTestCase :: Int -> TestInputs -> Either String TestCase
+mkTestCase testNum (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platform)
+  = do
+      intToLabel <- U.buildMap (cases >>= \case { (C i l) -> [(i, l)]; _ -> [] })
+      let fullSet = S.fromAscList [lb..ub]
+          numCases = M.size intToLabel
 
-      defaults = cases >>= \case { (D l)-> [l]; _ -> [] }
-      numDefaults = length defaults
-    in
-      if | lb > ub -> error "Bad data type range."
-         | testLb > testUb -> error "Bad test range."
-         | numCases == 0 -> error "No cases specified."
-         | numDefaults > 1 -> error "Too many defaults"
-         | numCases == 1 && numDefaults == 0 -> error "Missing default case."
-         | not $ S.isSubsetOf (M.keysSet intToLabel) (S.fromAscList [lb..ub]) -> error "Cases outside of datatype range."
-         | S.difference fullSet (M.keysSet intToLabel) /= S.empty && numDefaults /= 1 -> error "Missing cases but no default specified."
-         | fullSet == M.keysSet intToLabel && numDefaults == 1 -> error "Default specified when no gaps."
-         | otherwise ->
-           let
-             defLabelOpt = if numDefaults == 0 then Nothing else Just $ head defaults
-             st = SW.mkSwitchTargets True (lb, ub) defLabelOpt intToLabel
-           in
-             TC dtr tr st platform
+          defaults = cases >>= \case { (D l)-> [l]; _ -> [] }
+          numDefaults = length defaults
+      when (lb > ub) $ Left "Bad data type range."
+      when (testLb > testUb) $ Left "Bad test range."
+      when (numCases == 0) $ Left "No cases specified."
+      when (numDefaults > 1) $ Left "Too many defaults"
+      when (numCases == 1 && numDefaults == 0) $ Left "Missing default case."
+      unless (S.isSubsetOf (M.keysSet intToLabel) (S.fromAscList [lb..ub])) $ Left "Cases outside of datatype range."
+      when (S.difference fullSet (M.keysSet intToLabel) /= S.empty && numDefaults /= 1) $ Left "Missing cases but no default specified."
+      when (fullSet == M.keysSet intToLabel && numDefaults == 1) $ Left "Default specified when no gaps."
+      let
+        defLabelOpt = if numDefaults == 0 then Nothing else Just $ head defaults
+        st = SW.mkSwitchTargets True (lb, ub) defLabelOpt intToLabel
+      return $ TC testNum dtr tr st platform
 
-doTest :: TestCase -> IO ()
-doTest (TC (DTR (lb, ub)) (TR (testLb, testUb)) st platform)
-  = print plan
+doTest :: Either String TestCase -> IO ()
+doTest (Right (TC testNum (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTargets _ _ defLabelOpt intToLabel _ _) platform))
+  = do
+      putStr (show testNum ++ ": ")
+      let res = Maybe.catMaybes $ processRes <$> diffs
+      if null res then putStrLn "Ok!" else mapM_ putStrLn res
   where
     plan = SW.createPlan st platform
+    eval = EV.eval platform plan
+    diffs = [(expected, res) | n <- [testLb..testUb], let expected = lookup n intToLabel defLabelOpt, let res = eval n]
+
+    processRes :: (Label, Either String Label) -> Maybe String
+    processRes (expectedLabel, Left errStr) = Just $ "Expected: " ++ show expectedLabel ++ " but instead got an error: \"" ++ errStr ++ "\""
+    processRes (expectedLabel, Right resultLabel) = if expectedLabel /= resultLabel then Just $ "Expected: " ++ show expectedLabel ++ " but instead got:"  ++ show resultLabel else Nothing
+
+    lookup :: Integer -> M.Map Integer Label -> Maybe Label -> Label
+    lookup n m (Just defLabel) = Maybe.fromMaybe defLabel $ M.lookup n m
+    lookup n m Nothing = case M.lookup n m of { Just ans -> ans; Nothing -> error "The unthinkable happened!" }
+
+doTest (Left err) 
+  = putStrLn $ "Invalid input for test.  Error was: \"" ++ err ++ "\""
 
 lab0 :: SW.Label
 lab0 = SW.L 0
@@ -69,14 +80,14 @@ lab1 = SW.L 1
 sPlatform :: SW.Platform
 sPlatform = SW.Platform SW.bytesInWordForPlatform
 
-test0_size_1 :: TestCase
-test0_size_1 = mkTestCase (TI [C 0 lab0, D lab1] (DTR (0, 0)) (TR (-2, 2)) sPlatform)
-test1_size_1 :: TestCase
-test1_size_1 = mkTestCase (TI [C 1 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
-test2_size_1 :: TestCase
-test2_size_1 = mkTestCase (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
+test0_size_1 :: Either String TestCase
+test0_size_1 = mkTestCase 0 (TI [C 0 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
+test1_size_1 :: Either String TestCase
+test1_size_1 = mkTestCase 1 (TI [C 1 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
+test2_size_1 :: Either String TestCase
+test2_size_1 = mkTestCase 2 (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
 
-allTests :: [TestCase]
+allTests :: [Either String TestCase]
 allTests = [test0_size_1, test1_size_1, test2_size_1]
 
 main :: IO ()
