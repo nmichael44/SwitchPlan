@@ -6,15 +6,16 @@
 module Eval where
 
 import Switch
-import Data.Bits
+import qualified Data.Bits as Bits
 import qualified Data.Map.Lazy as M
-import Data.Maybe(fromMaybe)
+import qualified Data.Maybe as Maybe
 
 eval :: Platform -> SwitchPlan -> Integer -> Label
 eval platform plan n = go plan
   where
     (Platform bytesInWord) = platform
-    msb = 1 `shiftL` (8 * bytesInWord - 1)
+    bitsInWord = 8 * bytesInWord
+    msb = 1 `Bits.shiftL` (bitsInWord - 1)
 
     go :: SwitchPlan -> Label
     go (Unconditionally label) = label
@@ -28,15 +29,12 @@ eval platform plan n = go plan
     go (IfLE _signed k thenPlan elsePlan)
       = go $ if n <= k then thenPlan else elsePlan
 
-    go (BitTest
-         BTOI {
-           bitTestInfo = BitTestInfo { offset, magicConstant, bitTestFailedPlan }
-           , bitTestSucceededPlan })
-      = go $ if ((magicConstant `shiftL` fromIntegral (n - fromMaybe 0 offset)) .&. msb) /= 0
-             then bitTestSucceededPlan
-             else bitTestFailedPlan
+    go (BitTest BitTestInfo { offset, magicConstant, bitTestFailedPlan } bitTestSucceededPlan)
+        = go $ if ((magicConstant `Bits.shiftL` fromIntegral (n - Maybe.fromMaybe 0 offset)) Bits..&. msb) /= 0
+              then bitTestSucceededPlan
+              else bitTestFailedPlan
 
-    go (JumpTable (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _ _))
+    go (JumpTable (SwitchTargets _signed _range defLabelOpt intToLabel _ _))
       = case M.lookup n intToLabel of
-          Nothing -> case defLabelOpt of { Just lab -> lab; Nothing -> error "Bad plan" }
+          Nothing -> case defLabelOpt of { Just lab -> lab; Nothing -> error ("Bad plan.  Could not find int " ++ show n ++ " in cases and there was no default label.") }
           Just lab -> lab

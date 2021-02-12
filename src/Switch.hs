@@ -14,8 +14,6 @@ import qualified Data.Char as C
 import qualified Data.Maybe as Maybe
 import qualified Utils as U
 
-import Data.Bits
-
 import Debug.Trace
 
 someFunc :: IO ()
@@ -64,20 +62,12 @@ instance Show BitTestInfo where
 data BitTestInfo
     = BitTestInfo { offset :: Maybe Integer, magicConstant :: Integer, bitTestFailedPlan :: SwitchPlan }
 
--- A BitTestOptInfo describes one partilar IfBitTest.
--- See Note [Compiling BitTest case statements] for more details.
-data BitTestOptInfo
-    = BTOI {
-        bitTestInfo :: BitTestInfo
-      , bitTestSucceededPlan :: SwitchPlan }
-  deriving Show
-
 data SwitchPlan
     = Unconditionally Label
     | IfEqual Integer Label SwitchPlan
     | IfLT Bool Integer SwitchPlan SwitchPlan
     | IfLE Bool Integer SwitchPlan SwitchPlan
-    | BitTest BitTestOptInfo
+    | BitTest BitTestInfo SwitchPlan
     | JumpTable SwitchTargets
   deriving Show
 
@@ -87,7 +77,7 @@ platformWordSizeInBytes :: Platform -> Int
 platformWordSizeInBytes (Platform n) = n
 
 createPlan :: SwitchTargets -> Platform -> SwitchPlan
-createPlan st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) platform
+createPlan st@(SwitchTargets signed _range defLabelOpt _intToLabel _labelToInts intLabelList) platform
   = if | [(n, label)] <- intLabelList
          , Just defLabel <- defLabelOpt -- todo: have a look at this again later.  Does it ever happen?
          -> IfEqual n label (Unconditionally defLabel)
@@ -105,22 +95,20 @@ createPlan st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelT
          -> plan
 
        | otherwise ->
-         let (stLeft, n, stRight) = splitInterval st platform
-           -- split the interval in two in an intelligent way
-           -- and recurce twice to finish the job
-           -- returning something like if (x < expr) then plan1 else plan2
+         let
+           (stLeft, n, stRight) = splitInterval st
          in
            IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
   where
     bitsInWord = 8 * fromIntegral (platformWordSizeInBytes platform)
 
 createTwoValBitTest :: SwitchTargets -> Integer -> Maybe SwitchPlan
-createTwoValBitTest st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) bitsInWord
+createTwoValBitTest st@(SwitchTargets _signed _range defLabelOpt _intToLabel labelToInts _intLabelList) bitsInWord
   = if numLabels /= 2
     then Nothing
     else
       let
-        [label1, label2] = S.toList labelSet
+        [label1, label2] = S.toList labelSet   -- can never fail
       in
         case defLabelOpt of 
           Just defLabel -> createBitTestForTwoLabelsWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
@@ -134,7 +122,7 @@ createTwoValBitTest st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLab
 -- Function creates a plan 
 createBitTestForTwoLabelsNoDefault :: SwitchTargets -> Label -> Label -> Integer -> Maybe SwitchPlan
 createBitTestForTwoLabelsNoDefault
-  (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
+  (SwitchTargets signed (lb, ub) _defLabelOpt _intToLabel labelToInts _intLabelList)
   label1
   label2
   bitsInWord
@@ -220,7 +208,7 @@ maxExpandSizeForDefault = 128
 
 createBitTestForTwoLabelsWithDefault :: SwitchTargets -> Label -> Integer -> Maybe SwitchPlan
 createBitTestForTwoLabelsWithDefault
-  (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
+  (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts _intLabelList)
     label
     bitsInWord
   = let
@@ -254,8 +242,6 @@ createBitTestForTwoLabelsWithDefault
           doLeftCheckRegion = lb < regionLb
           doRightCheckRegion = ub > regionUb
 
-          numChecksForRegion = U.ind doLeftCheckRegion + U.ind doRightCheckRegion
-
           labPlan = Unconditionally label
           defPlan = Unconditionally defLabel
           defPlanOpt = Just defPlan
@@ -279,7 +265,7 @@ compT :: T -> T -> Ordering
 compT (T Nothing) (T Nothing) = EQ 
 compT (T Nothing) (T (Just _)) = LT
 compT (T (Just _)) (T Nothing) = GT 
-compT (T (Just (lab, n, eqLb, eqUb))) (T (Just (lab', n', eqLb', eqUb')))
+compT (T (Just (_, _, eqLb, eqUb))) (T (Just (_, _, eqLb', eqUb')))
   = case compare eqLb eqLb' of
       EQ -> compare eqUb eqUb'
       x -> x
@@ -291,7 +277,7 @@ createThreeValPlanNoDefault
   = if Maybe.isJust defLabelOpt || M.size labelToInts /= 3
     then Nothing
     else
-      let
+      let                                                            -- Can never fail.
         [(lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)] = M.toList labelToInts
         classLab1 = classifyCandidate lab1 label1Ints
         classLab2 = classifyCandidate lab2 label2Ints
@@ -324,7 +310,7 @@ createGeneralBitTest :: SwitchTargets -> Platform -> Maybe SwitchPlan
 createGeneralBitTest
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
   bitsInWord
- = undefined
+ = Nothing
 
 maxJumpTableGapSize :: Integer
 maxJumpTableGapSize = 6
@@ -336,14 +322,14 @@ minJumpTableOffset :: Integer
 minJumpTableOffset = 2
 
 createJumpTable :: SwitchTargets -> Maybe SwitchPlan
-createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
+createJumpTable st@(SwitchTargets _signed (lb, ub) defLabelOpt intToLabel _labelToInts _intLabelList)
   = case defLabelOpt of
-      Just defLabel ->
+      Just _ ->
         let
           spanOfFullRegion = ub - lb + 1
         in
           if spanOfFullRegion <= maxExpandSizeForDefault
-          then go (expandRegion st lb ub) True
+          then createJumpTableAux (expandRegion st lb ub) True
           else
             let
               (regionLb, _) = M.findMin intToLabel
@@ -351,30 +337,35 @@ createJumpTable st@(SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel l
               spanOfCases = regionUb - regionLb + 1
             in
               if spanOfCases <= maxExpandSizeForDefault
-              then go (expandRegion st regionLb regionUb) True
-              else go st False
-      Nothing -> go st True
-  where
-    go :: SwitchTargets -> Bool -> Maybe SwitchPlan
-    go st@(SwitchTargets _signed _range _defLabelOpt intToLabel _labelToInts _intLabelList) hasBeenExpanded
-      = let
-          numCases = M.size intToLabel
-        in
-          if | numCases < minJumpTableSize -> Nothing
-             | not hasBeenExpanded && not (U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel)) -> Nothing
-             | otherwise -> Just $ JumpTable st
+              then createJumpTableAux (expandRegion st regionLb regionUb) True
+              else createJumpTableAux st False
+      Nothing -> createJumpTableAux st True
 
-splitInterval :: SwitchTargets -> Platform -> (SwitchTargets, Integer, SwitchTargets)
-splitInterval (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList) platform
+createJumpTableAux :: SwitchTargets -> Bool -> Maybe SwitchPlan
+createJumpTableAux st@(SwitchTargets _signed _range _defLabelOpt intToLabel _labelToInts _intLabelList) hasBeenExpanded
   = let
-      
+      numCases = M.size intToLabel
     in
-      undefined
-    
+      if | numCases < minJumpTableSize -> Nothing
+          | not hasBeenExpanded && not (U.isDenseEnough maxJumpTableGapSize $ M.keys intToLabel) -> Nothing
+          | otherwise -> Just $ JumpTable st
 
+splitInterval :: SwitchTargets -> (SwitchTargets, Integer, SwitchTargets)
+splitInterval (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _labelToInts _intLabelList)
+  = let
+      caseInts = M.keys intToLabel
+      regionSeparators = U.findRegionSeparators maxJumpTableGapSize caseInts
+      midSeparator = U.findMiddleOfList regionSeparators
+
+      (intToLabelLeft, intToLabelRight) = U.splitMapInTwo midSeparator intToLabel
+
+      stLeft = mkSwitchTargets signed (lb, midSeparator - 1) defLabelOpt intToLabelLeft
+      stRight = mkSwitchTargets signed (midSeparator, ub) defLabelOpt intToLabelRight
+    in
+      (stLeft, midSeparator, stRight)
 
 expandRegion :: SwitchTargets -> Integer -> Integer -> SwitchTargets
-expandRegion (SwitchTargets signed range@(lb, ub) defLabelOpt@(Just defLabel) intToLabel labelToInts intLabelList) regLb regUb
+expandRegion (SwitchTargets signed range@(lb, ub) defLabelOpt@(Just defLabel) intToLabel labelToInts _intLabelList) regLb regUb
   = let
       existingIntsGointToDefault = Maybe.fromMaybe [] $ M.lookup defLabel labelToInts
       intToLabel' = L.foldl' (flip M.delete) intToLabel existingIntsGointToDefault
@@ -415,8 +406,7 @@ createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWo
                                 , magicConstant = magicConstant
                                 , bitTestFailedPlan = otherLabelPlan }
     in
-      BitTest (BTOI { bitTestInfo = bitTestInfo
-                    , bitTestSucceededPlan = Unconditionally bitTestLabel})
+      BitTest bitTestInfo $ Unconditionally bitTestLabel
 
 createBracketPlan :: Bool -> Maybe SwitchPlan -> Maybe SwitchPlan -> SwitchPlan
                      -> Integer -> Integer -> SwitchPlan
@@ -434,16 +424,16 @@ createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan lb u
 
       (Nothing, Nothing) -> bitTestPlan
 
-lab1 :: Label
-lab1 = L 1
-lab2 :: Label
-lab2 = L 2
-lab3 :: Label
-lab3 = L 3
+l1 :: Label
+l1 = L 1
+l2 :: Label
+l2 = L 2
+l3 :: Label
+l3 = L 3
 
 st1 :: SwitchTargets
-st1 = mkSwitchTargets True (1,10) (Just lab3)
-       (M.fromList [(3, lab2), (6, lab1), (7, lab1)])
+st1 = mkSwitchTargets True (1,10) (Just l3)
+       (M.fromList [(3, l2), (6, l1), (7, l1)])
 pl = Platform 64
 
 {-
