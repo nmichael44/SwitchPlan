@@ -10,8 +10,7 @@ module Utils (
   , isDenseEnough
   , ind
   , findRegionSeparators
-  , findMiddleOfList)
-where
+  , findMiddleOfList) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
