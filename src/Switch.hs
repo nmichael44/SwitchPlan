@@ -14,7 +14,7 @@ import qualified Data.Char as C
 import qualified Data.Maybe as Maybe
 import qualified Utils as U
 
-import Debug.Trace
+--import Debug.Trace
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
@@ -107,8 +107,8 @@ createTwoValBitTest st@(SwitchTargets _signed _range defLabelOpt _intToLabel lab
   = if numLabels /= 2
     then Nothing
     else
-      let
-        [label1, label2] = S.toList labelSet   -- can never fail
+      let                                                                            -- Can never fail but let's silence the ghc warning.
+        (label1, label2) = case S.toList labelSet of { [lab1, lab2] -> (lab1, lab2); _ -> error "The improssible happened" }
       in
         case defLabelOpt of 
           Just defLabel -> createBitTestForTwoLabelsWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
@@ -277,8 +277,8 @@ createThreeValPlanNoDefault
   = if Maybe.isJust defLabelOpt || M.size labelToInts /= 3
     then Nothing
     else
-      let                                                            -- Can never fail.
-        [(lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)] = M.toList labelToInts
+      let                                                            -- Can never fail but let's silence the ghc warning.
+        ((lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)) = case M.toList labelToInts of { [p0, p1, p2] -> (p0, p1, p2); _ -> error "The impossible happened!" }
         classLab1 = classifyCandidate lab1 label1Ints
         classLab2 = classifyCandidate lab2 label2Ints
         classLab3 = classifyCandidate lab3 label3Ints
@@ -308,8 +308,8 @@ createThreeValPlanNoDefault
 
 createGeneralBitTest :: SwitchTargets -> Platform -> Maybe SwitchPlan
 createGeneralBitTest
-  (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts intLabelList)
-  bitsInWord
+  (SwitchTargets _signed _range@(_lb, _ub) _defLabelOpt _intToLabel _labelToInts _intLabelList)
+  _bitsInWord
  = Nothing
 
 maxJumpTableGapSize :: Integer
@@ -434,6 +434,8 @@ l3 = L 3
 st1 :: SwitchTargets
 st1 = mkSwitchTargets True (1,10) (Just l3)
        (M.fromList [(3, l2), (6, l1), (7, l1)])
+
+pl :: Platform
 pl = Platform 64
 
 {-
