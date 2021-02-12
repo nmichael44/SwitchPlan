@@ -32,12 +32,12 @@ mkTestCase (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platform)
   = let
       fullSet = S.fromAscList [lb..ub]
       intToLabel =
-        case U.buildMap (cases >>=  (\case { (C i l) -> [(i, l)]; (D _) -> [] })) of
+        case U.buildMap (cases >>= \case { (C i l) -> [(i, l)]; _ -> [] }) of
           Left err -> error err
           Right m -> m
       numCases = M.size intToLabel
 
-      defaults = concatMap (\case { (C _ _) -> []; (D l)-> [l] }) cases
+      defaults = cases >>= \case { (D l)-> [l]; _ -> [] }
       numDefaults = length defaults
     in
       if | lb > ub -> error "Bad data type range."
@@ -69,7 +69,6 @@ lab1 = SW.L 1
 sPlatform :: SW.Platform
 sPlatform = SW.Platform SW.bytesInWordForPlatform
 
-
 test0_size_1 :: TestCase
 test0_size_1 = mkTestCase (TI [C 0 lab0, D lab1] (DTR (0, 0)) (TR (-2, 2)) sPlatform)
 test1_size_1 :: TestCase
@@ -77,3 +76,8 @@ test1_size_1 = mkTestCase (TI [C 1 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlat
 test2_size_1 :: TestCase
 test2_size_1 = mkTestCase (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
 
+allTests :: [TestCase]
+allTests = [test0_size_1, test1_size_1, test2_size_1]
+
+main :: IO ()
+main = sequence_ (doTest <$> allTests)

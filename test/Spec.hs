@@ -12,6 +12,8 @@ import qualified Switch as SW
 import qualified Eval as EV
 import qualified Utils as U
 
+import UnitTests
+
 import Debug.Trace ( trace )
 
 lb :: Int
@@ -56,20 +58,24 @@ generateRandomSets maxNumOfSets =
     return (if c == 0 then (s0, s1) else (s1, s0))
 
 isBitTest :: SW.SwitchPlan -> Bool
-isBitTest (SW.BitTest _) = True
+isBitTest (SW.BitTest _ _) = True
 isBitTest _ = False
 
 containsBitTestNotAtTopLevel :: SW.SwitchPlan -> Bool
 containsBitTestNotAtTopLevel plan
   = case plan of
-      (SW.BitTest SW.BTOI { SW.bitTestInfo = SW.BitTestInfo { SW.offset, SW.magicConstant, SW.bitTestFailedPlan }, SW.bitTestSucceededPlan }) -> go bitTestSucceededPlan || go bitTestFailedPlan
+      (SW.BitTest
+        SW.BitTestInfo {
+          SW.offset
+          , SW.magicConstant
+          , SW.bitTestFailedPlan} bitTestSucceededPlan) -> go bitTestSucceededPlan || go bitTestFailedPlan
       pl -> go pl
   where
     go (SW.Unconditionally _) = False 
     go (SW.IfEqual _ _ falsePlan) = go falsePlan
     go (SW.IfLT _ _ thenPlan elsePlan) = go thenPlan || go elsePlan
     go (SW.IfLE _ _ thenPlan elsePlan) = go thenPlan || go elsePlan
-    go (SW.BitTest _) = True
+    go (SW.BitTest _ _) = True
     go (SW.JumpTable _) = False
 
 getLabelToInts :: SW.SwitchTargets -> M.Map SW.Label [Integer]
@@ -132,4 +138,4 @@ doTest2 start end platform st plan
 m:: Int
 m = 4
 
-main = quickCheckWith stdArgs { maxSuccess = m } prop_switch_plan_test
+-- main = quickCheckWith stdArgs { maxSuccess = m } prop_switch_plan_test
