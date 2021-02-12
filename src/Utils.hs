@@ -12,8 +12,7 @@ module Utils (
   , findRegionSeparators
   , findMiddleOfList
   , splitMapInTwo
-  , buildMap)
-where
+  , buildMap) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
@@ -87,6 +86,7 @@ findMiddleOfList ns
 
 -- Splits a (Map k v) into two Maps (m0, m1) such that all keys of m0 are < k and all keys of m1 are >= k.
 -- If k happens to be in the map then it will be found in m1.
+{-# INLINABLE splitMapInTwo #-}
 splitMapInTwo :: Ord k => k -> M.Map k v -> (M.Map k v, M.Map k v)
 splitMapInTwo k m
   = let
@@ -97,6 +97,7 @@ splitMapInTwo k m
         Nothing -> p
         Just v -> (m0, M.insert k v m1)
 
+{-# INLINABLE buildMap #-}
 buildMap :: (Show k, Show v, Ord k) => [(k, v)] -> Either String (M.Map k v)
 buildMap = go M.empty
   where
