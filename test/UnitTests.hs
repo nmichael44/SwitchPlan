@@ -55,15 +55,15 @@ doTest (Right (TC testNum (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTarg
   = do
       putStr (show testNum ++ ": ")
       let res = Maybe.catMaybes $ processRes <$> diffs
-      if null res then putStrLn "Ok!" else mapM_ putStrLn res
+      if null res then putStrLn "Ok!" else do { putStrLn ""; mapM_ putStrLn res }
   where
     plan = SW.createPlan st platform
     eval = EV.eval platform plan
-    diffs = [(expected, res) | n <- [testLb..testUb], let expected = lookup n intToLabel defLabelOpt, let res = eval n]
+    diffs = [(n, expected, res) | n <- [testLb..testUb], let expected = lookup n intToLabel defLabelOpt, let res = eval n]
 
-    processRes :: (Label, Either String Label) -> Maybe String
-    processRes (expectedLabel, Left errStr) = Just $ "Expected: " ++ show expectedLabel ++ " but instead got an error: \"" ++ errStr ++ "\""
-    processRes (expectedLabel, Right resultLabel) = if expectedLabel /= resultLabel then Just $ "Expected: " ++ show expectedLabel ++ " but instead got:"  ++ show resultLabel else Nothing
+    processRes :: (Integer, Label, Either String Label) -> Maybe String
+    processRes (n, expectedLabel, Left errStr) = Just $ "For n: " ++ show n ++ " expected: " ++ show expectedLabel ++ " but instead got an error: \"" ++ errStr ++ "\""
+    processRes (n, expectedLabel, Right resultLabel) = if expectedLabel /= resultLabel then Just $ "For n: " ++ show n ++ " expected: " ++ show expectedLabel ++ " but instead got:"  ++ show resultLabel else Nothing
 
     lookup :: Integer -> M.Map Integer Label -> Maybe Label -> Label
     lookup n m (Just defLabel) = Maybe.fromMaybe defLabel $ M.lookup n m
