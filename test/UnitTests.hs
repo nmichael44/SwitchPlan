@@ -20,7 +20,7 @@ type Label = SW.Label
 
 data PieceOfCase
   = C Integer Label  -- usual case i.e. n -> L1
-  | D Label       -- the default case
+  | D Label          -- the default case
 
 newtype DataTypeRange = DTR (Integer, Integer)
 newtype TestingRange = TR (Integer, Integer)
@@ -45,17 +45,25 @@ mkTestCase testNum (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platfor
       unless (S.isSubsetOf (M.keysSet intToLabel) (S.fromAscList [lb..ub])) $ Left "Cases outside of datatype range."
       when (S.difference fullSet (M.keysSet intToLabel) /= S.empty && numDefaults /= 1) $ Left "Missing cases but no default specified."
       when (fullSet == M.keysSet intToLabel && numDefaults == 1) $ Left "Default specified when no gaps."
+
       let
         defLabelOpt = if numDefaults == 0 then Nothing else Just $ head defaults
         st = SW.mkSwitchTargets True (lb, ub) defLabelOpt intToLabel
+
       return $ TC testNum dtr tr st platform
 
+sShowPlans :: Bool
+sShowPlans = True
+
 doTest :: Either String TestCase -> IO ()
-doTest (Right (TC testNum (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTargets _ _ defLabelOpt intToLabel _ _) platform))
+doTest (Right (TC testNum (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTargets _ _ defLabelOpt intToLabel _) platform))
   = do
-      putStr (show testNum ++ ": ")
+      (if sShowPlans then putStrLn else putStr) $ "Test " ++ show testNum ++ ":"
+      when sShowPlans (putStrLn $ "intToLabel: " ++ show intToLabel)
+      when sShowPlans (putStrLn $ "DefaultLabel: " ++ show defLabelOpt)
+      when sShowPlans (putStrLn $ "Plan: " ++ show plan)
       let res = Maybe.catMaybes $ processRes <$> diffs
-      if null res then putStrLn "Ok!" else do { putStrLn ""; mapM_ putStrLn res }
+      if null res then putStrLn "Ok!\n" else do { putStrLn ""; mapM_ putStrLn res }
   where
     plan = SW.createPlan st platform
     eval = EV.eval platform plan
@@ -72,10 +80,11 @@ doTest (Right (TC testNum (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTarg
 doTest (Left err) 
   = putStrLn $ "Invalid input for test.  Error was: \"" ++ err ++ "\""
 
-lab0 :: SW.Label
+lab0, lab1, lab2, lab3 :: SW.Label
 lab0 = SW.L 0
-lab1 :: SW.Label
 lab1 = SW.L 1
+lab2 = SW.L 2
+lab3 = SW.L 3
 
 sPlatform :: SW.Platform
 sPlatform = SW.Platform SW.bytesInWordForPlatform
@@ -86,6 +95,8 @@ test1_size_1 :: Either String TestCase
 test1_size_1 = mkTestCase 1 (TI [C 1 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
 test2_size_1 :: Either String TestCase
 test2_size_1 = mkTestCase 2 (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
+
+test3_size_2 = undefined
 
 allTests :: [Either String TestCase]
 allTests = [test0_size_1, test1_size_1, test2_size_1]

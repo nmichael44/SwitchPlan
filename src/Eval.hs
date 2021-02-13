@@ -34,7 +34,7 @@ eval platform plan n = go plan
               then bitTestSucceededPlan
               else bitTestFailedPlan
 
-    go (JumpTable (SwitchTargets _signed _range defLabelOpt intToLabel _ _))
+    go (JumpTable (SwitchTargets _signed _range defLabelOpt intToLabel _))
       = case M.lookup n intToLabel of
           Nothing -> case defLabelOpt of { Just lab -> Right lab; Nothing -> Left ("Bad plan.  Could not find int " ++ show n ++ " in cases and there was no default label.") }
           Just lab -> Right lab
