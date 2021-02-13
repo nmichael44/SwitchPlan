@@ -79,7 +79,7 @@ containsBitTestNotAtTopLevel plan
     go (SW.JumpTable _) = False
 
 getLabelToInts :: SW.SwitchTargets -> M.Map SW.Label [Integer]
-getLabelToInts (SW.SwitchTargets _ _ _ _ m _) = m
+getLabelToInts (SW.SwitchTargets _ _ _ _ m) = m
 
 doTrace :: Bool
 doTrace = False
@@ -121,7 +121,7 @@ doTest2 :: Int -> Int -> SW.Platform -> SW.SwitchTargets -> SW.SwitchPlan -> Boo
 doTest2 start end platform st plan
   = go start
   where
-    (SW.SwitchTargets _ _ _ intToLabel labelToInts _) = st
+    (SW.SwitchTargets _ _ _ intToLabel labelToInts) = st
     go start
       | start > end = True
       | otherwise =
@@ -133,7 +133,9 @@ doTest2 start end platform st plan
           case res of
             Left errStr -> trace ("errStr: " ++ errStr) False
             Right res ->
-              (if res /= expectedRes then trace ("\nstart: " ++ show start' ++ " res: " ++ show res ++ " expectedRes: " ++ show expectedRes ++ "\nplan: " ++ show plan ++ "\nintToLabel: " ++ show intToLabel ++ "\nlabelToInt: " ++ show labelToInts) else id)
+              (if res /= expectedRes
+               then trace ("\nstart: " ++ show start' ++ " res: " ++ show res ++ " expectedRes: " ++ show expectedRes ++ "\nplan: " ++ show plan ++ "\nintToLabel: " ++ show intToLabel ++ "\nlabelToInt: " ++ show labelToInts)
+               else id)
               (res == expectedRes && go (start + 1))
 
 m:: Int
