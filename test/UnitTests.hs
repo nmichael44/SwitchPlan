@@ -41,8 +41,9 @@ mkTestCase testNum (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platfor
            numDefaults = length defaults
        when (lb > ub) $ Left "Bad data type range."
        when (testLb > testUb) $ Left "Bad test range."
+       when (numDefaults == 0) (when (testLb < lb || testUb > ub) (Left "When default label is missing, you cannot test outside the datatype range."))
        when (numCases == 0) $ Left "No cases specified."
-       when (numDefaults > 1) $ Left "Too many defaults"
+       when (numDefaults > 1) $ Left "Too many defaults."
        when (numCases == 1 && numDefaults == 0) $ Left "Missing default case."
        unless (S.isSubsetOf (M.keysSet intToLabel) (S.fromAscList [lb..ub])) $ Left "Cases outside of datatype range."
        when (S.difference fullSet (M.keysSet intToLabel) /= S.empty && numDefaults /= 1) $ Left "Missing cases but no default specified."
@@ -101,11 +102,13 @@ test2_size_1 :: STC
 test2_size_1 = mkTestCase 2 (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
 
 test3_size_2 :: STC
-test3_size_2 = mkTestCase 3 (TI [C 0 lab0, C 1 lab1] (DTR (0, 2)) (TR (-2, 2)) sPlatform)
+test3_size_2 = mkTestCase 3 (TI [C 0 lab0, C 1 lab1] (DTR (0, 1)) (TR (0, 1)) sPlatform)
+test4_size_2 :: STC
+test4_size_2 = mkTestCase 4 (TI [C 0 lab0, C 1 lab0] (DTR (0, 1)) (TR (0, 1)) sPlatform)
 
 allTests :: [STC]
 allTests = [test0_size_1, test1_size_1, test2_size_1
-            , test3_size_2]
+            , test3_size_2, test4_size_2]
 
 executeAndReport :: [IO Bool] -> IO ()
 executeAndReport actions
