@@ -77,12 +77,7 @@ platformWordSizeInBytes (Platform n) = n
 
 createPlan :: SwitchTargets -> Platform -> SwitchPlan
 createPlan st@(SwitchTargets signed _range _defLabelOpt _intToLabel _labelToInts) platform
-  =
-{-     if | [(n, label)] <- intLabelList
-         , Just defLabel <- defLabelOpt -- todo: have a look at this again later.  Does it ever happen?
-         -> IfEqual n label (Unconditionally defLabel)
--}
-    if | Just plan <- createTwoValBitTest st platform
+  = if | Just plan <- createTwoValBitTest st platform
           -> plan
 
        | Just plan <- createThreeValPlanNoDefault st platform
