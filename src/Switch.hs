@@ -28,6 +28,15 @@ data SwitchTargets =
         (M.Map Label [Integer])    -- The reverse of the above Map
     deriving (Show, Eq)
 
+getSigned :: SwitchTargets -> Bool
+getSigned (SwitchTargets signed _ _ _ _) = signed
+
+getDefLabel :: SwitchTargets -> Maybe Label
+getDefLabel (SwitchTargets _ _ defLabelOpt _ _) = defLabelOpt
+
+getLabelToInts :: SwitchTargets -> M.Map Label [Integer]
+getLabelToInts (SwitchTargets _ _ _ _ labelToInts) = labelToInts
+
 mkSwitchTargets :: Bool -> (Integer, Integer) -> Maybe Label -> M.Map Integer Label -> SwitchTargets
 mkSwitchTargets signed range defLabel intToLabel
   = SwitchTargets signed range defLabel intToLabel (U.calcRevMap intToLabel)
@@ -76,41 +85,52 @@ platformWordSizeInBytes :: Platform -> Int
 platformWordSizeInBytes (Platform n) = n
 
 createPlan :: SwitchTargets -> Platform -> SwitchPlan
-createPlan st@(SwitchTargets signed _range _defLabelOpt _intToLabel _labelToInts) platform
-  = if | Just plan <- createTwoValBitTest st platform
-          -> plan
-
-       | Just plan <- createThreeValPlanNoDefault st platform
+createPlan st platform
+  = let
+    -- We have to do this because one of the integer labels could be the same as the default label
+    -- Thus we build a set to remove possible duplicates.
+      labelSet = let s = M.keysSet (getLabelToInts st) in maybe s (`S.insert` s) (getDefLabel st)
+    in
+      if | Just plan <- createOneValPlan labelSet
          -> plan
+         | Just plan <- createTwoValPlan labelSet st platform
+            -> plan
+         | Just plan <- createThreeValPlanNoDefault st platform
+           -> plan
+         | Just plan <- createGeneralBitTest st platform
+           -> plan
+         | Just plan <- createJumpTable st
+           -> plan
+         | otherwise
+           -> createSplitPlan (getSigned st) (splitInterval st) platform
 
-       | Just plan <- createGeneralBitTest st platform
-         -> plan
+createSplitPlan :: Bool -> (SwitchTargets, Integer, SwitchTargets) -> Platform -> SwitchPlan
+createSplitPlan signed (stLeft, n, stRight) platform = IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
 
-       | Just plan <- createJumpTable st
-         -> plan
-
-       | otherwise ->
-         let
-           (stLeft, n, stRight) = splitInterval st
-         in
-           IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
-
-createTwoValBitTest :: SwitchTargets -> Platform -> Maybe SwitchPlan
-createTwoValBitTest st@(SwitchTargets _signed _range defLabelOpt _intToLabel labelToInts) platform
-  = if numLabels /= 2
+createOneValPlan :: S.Set Label -> Maybe SwitchPlan
+createOneValPlan labelSet
+  = if numLabels /= 1
     then Nothing
     else
       let
-        -- Can never fail but let's silence the ghc warning.
+        label = case S.toList labelSet of { [l] -> l; _ -> error "Should never happen" }
+      in
+        Just $ Unconditionally label
+  where
+    numLabels = S.size labelSet
+
+createTwoValPlan :: S.Set Label -> SwitchTargets -> Platform -> Maybe SwitchPlan
+createTwoValPlan labelSet st@(SwitchTargets _ _ defLabelOpt _ _) platform
+  = if numLabels /= 2
+    then Nothing
+    else
+      let  -- Can never fail but let's silence the ghc warning.
         (label1, label2) = case S.toList labelSet of { [lab1, lab2] -> (lab1, lab2); _ -> error "The improssible happened" }
       in
         case defLabelOpt of 
           Just defLabel -> createBitTestForTwoLabelsWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
           Nothing -> createBitTestForTwoLabelsNoDefault st label1 label2 bitsInWord
   where
-    -- We have to do this because one of the integer labels could be the same as the default label
-    -- Thus we build a set to remove possible duplicates.
-    labelSet = let s = M.keysSet labelToInts in maybe s (`S.insert` s) defLabelOpt
     numLabels = S.size labelSet
     bitsInWord = 8 * fromIntegral (platformWordSizeInBytes platform)
 
@@ -265,6 +285,8 @@ compT (T (Just (_, _, eqLb, eqUb))) (T (Just (_, _, eqLb', eqUb')))
       EQ -> compare eqUb eqUb'
       x -> x
 
+-- todo: This needs to be generalized to remove the constraint NoDefault.
+-- If the total number of labels is 3 (including the default) we can still do this.
 createThreeValPlanNoDefault :: SwitchTargets -> Platform -> Maybe SwitchPlan
 createThreeValPlanNoDefault
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts)
@@ -353,8 +375,14 @@ splitInterval (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _labelToInts
 
       (intToLabelLeft, intToLabelRight) = U.splitMapInTwo midSeparator intToLabel
 
-      stLeft = mkSwitchTargets signed (lb, midSeparator - 1) defLabelOpt intToLabelLeft
-      stRight = mkSwitchTargets signed (midSeparator, ub) defLabelOpt intToLabelRight
+      leftUb = midSeparator - 1
+      rightLb = midSeparator
+
+      defLabelLeft = if lb == leftUb then Nothing else defLabelOpt
+      defLabelRight = if rightLb == ub then Nothing else defLabelOpt
+
+      stLeft = mkSwitchTargets signed (lb, leftUb) defLabelLeft intToLabelLeft
+      stRight = mkSwitchTargets signed (rightLb, ub) defLabelRight intToLabelRight
     in
       (stLeft, midSeparator, stRight)
 
