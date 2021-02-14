@@ -95,7 +95,7 @@ createPlan st platform
          -> plan
          | Just plan <- createTwoValPlan labelSet st platform
             -> plan
-         | Just plan <- createThreeValPlanNoDefault st platform
+         | Just plan <- createThreeValPlan labelSet st platform
            -> plan
          | Just plan <- createGeneralBitTest st platform
            -> plan
@@ -285,17 +285,28 @@ compT (T (Just (_, _, eqLb, eqUb))) (T (Just (_, _, eqLb', eqUb')))
       EQ -> compare eqUb eqUb'
       x -> x
 
--- todo: This needs to be generalized to remove the constraint NoDefault.
--- If the total number of labels is 3 (including the default) we can still do this.
-createThreeValPlanNoDefault :: SwitchTargets -> Platform -> Maybe SwitchPlan
-createThreeValPlanNoDefault
+createThreeValPlan :: S.Set Label -> SwitchTargets -> Platform -> Maybe SwitchPlan
+createThreeValPlan
+  labelSet
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts)
   platform
-  = if Maybe.isJust defLabelOpt || M.size labelToInts /= 3
+  = if S.size labelSet /= 3
     then Nothing
     else
-      let                                                            -- Can never fail but let's silence the ghc warning.
-        ((lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)) = case M.toList labelToInts of { [p0, p1, p2] -> (p0, p1, p2); _ -> error "The impossible happened!" }
+      buildPlanForThree $
+        case defLabelOpt of
+          Just defLabel ->
+            let
+              labelToInts' = M.delete defLabel labelToInts    -- Can never fail but let's silence the ghc warning.
+              (p0, p1) = case M.toList labelToInts' of { [x0, x1] -> (x0, x1); _ -> error "The impossible happened!" }
+              p2 = (defLabel, [])        -- We set this to the empty list so that this is never picked for ellimination.
+            in
+              (p0, p1, p2)
+          Nothing ->
+            case M.toList labelToInts of { [x0, x1, x2] -> (x0, x1, x2); _ -> error "The impossible happened!" }
+  where
+    buildPlanForThree ((lab1, label1Ints), (lab2, label2Ints), (lab3, label3Ints)) =
+      let
         classLab1 = classifyCandidate lab1 label1Ints
         classLab2 = classifyCandidate lab2 label2Ints
         classLab3 = classifyCandidate lab3 label3Ints
@@ -305,7 +316,7 @@ createThreeValPlanNoDefault
         case candidate of
           (T (Just (lab, n, eqLb, eqUb))) -> Just $ createFullPlan lab n eqLb eqUb
           (T Nothing) -> Nothing
-  where
+
     classifyCandidate lab [n] = T $ Just (lab, n, n == lb, n == ub)
     classifyCandidate _ _ = T Nothing
 
