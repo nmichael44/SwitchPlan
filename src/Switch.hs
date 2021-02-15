@@ -15,10 +15,7 @@ import qualified Data.Char as C
 import qualified Numeric as N
 import qualified Utils as U
 
-import Debug.Trace
-
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+-- import Debug.Trace
 
 data SwitchTargets =
     SwitchTargets
@@ -129,15 +126,15 @@ createTwoValPlan labelSet st@(SwitchTargets _ _ defLabelOpt _ _) platform
         (label1, label2) = case S.toList labelSet of { [lab1, lab2] -> (lab1, lab2); _ -> error "The improssible happened" }
       in
         case defLabelOpt of 
-          Just defLabel -> createBitTestForTwoLabelsWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
-          Nothing -> createBitTestForTwoLabelsNoDefault st label1 label2 bitsInWord
+          Just defLabel -> createTwoValPlanWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
+          Nothing -> createBitTwoValPlanNoDefault st label1 label2 bitsInWord
   where
     numLabels = S.size labelSet
     bitsInWord = 8 * fromIntegral (platformWordSizeInBytes platform)
 
 -- Function creates a plan 
-createBitTestForTwoLabelsNoDefault :: SwitchTargets -> Label -> Label -> Integer -> Maybe SwitchPlan
-createBitTestForTwoLabelsNoDefault
+createBitTwoValPlanNoDefault :: SwitchTargets -> Label -> Label -> Integer -> Maybe SwitchPlan
+createBitTwoValPlanNoDefault
   (SwitchTargets signed (lb, ub) _defLabelOpt _intToLabel labelToInts)
   label1
   label2
@@ -222,8 +219,8 @@ createBitTestForTwoLabelsNoDefault
 maxExpandSizeForDefault :: Integer
 maxExpandSizeForDefault = 128
 
-createBitTestForTwoLabelsWithDefault :: SwitchTargets -> Label -> Integer -> Maybe SwitchPlan
-createBitTestForTwoLabelsWithDefault
+createTwoValPlanWithDefault :: SwitchTargets -> Label -> Integer -> Maybe SwitchPlan
+createTwoValPlanWithDefault
   (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts)
     label
     bitsInWord
@@ -245,7 +242,7 @@ createBitTestForTwoLabelsWithDefault
                         
           st' = SwitchTargets signed range Nothing intToLabel'' labelToInts''
         in
-           createBitTestForTwoLabelsNoDefault st' label defLabel bitsInWord
+           createBitTwoValPlanNoDefault st' label defLabel bitsInWord
       else
         let
           labelInts = case M.lookup label labelToInts' of { Just ns -> ns; Nothing -> error "The impossible happened!" }
