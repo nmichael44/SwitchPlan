@@ -9,9 +9,10 @@ module Switch where
 import qualified Data.Map.Lazy as M
 import qualified Data.Set as S
 import qualified Data.List as L
-import qualified Numeric as N
-import qualified Data.Char as C
 import qualified Data.Maybe as Maybe
+import qualified Data.Function as F
+import qualified Data.Char as C
+import qualified Numeric as N
 import qualified Utils as U
 
 import Debug.Trace
@@ -92,9 +93,9 @@ createPlan st platform
       labelSet = let s = M.keysSet (getLabelToInts st) in maybe s (`S.insert` s) (getDefLabel st)
     in
       if | Just plan <- createOneValPlan labelSet
-         -> plan
+           -> plan
          | Just plan <- createTwoValPlan labelSet st platform
-            -> plan
+           -> plan
          | Just plan <- createThreeValPlan labelSet st platform
            -> plan
          | Just plan <- createGeneralBitTest st platform
@@ -274,16 +275,12 @@ createBitTestForTwoLabelsWithDefault
              | regionCount == 3 -> Just $ createEqPlan labelInts label defLabel
              | otherwise -> Nothing
 
-newtype T = T (Maybe (Label, Integer, Bool, Bool))
+newtype T = T (Maybe (Label, [Integer], Bool, Bool))
 
-compT :: T -> T -> Ordering
-compT (T Nothing) (T Nothing) = EQ 
-compT (T Nothing) (T (Just _)) = LT
-compT (T (Just _)) (T Nothing) = GT 
-compT (T (Just (_, _, eqLb, eqUb))) (T (Just (_, _, eqLb', eqUb')))
-  = case compare eqLb eqLb' of
-      EQ -> compare eqUb eqUb'
-      x -> x
+costOfT :: T -> Int
+costOfT (T Nothing) = 100
+costOfT (T (Just (_, ns, eqLb, eqUb)))
+  = 10 * length ns + (1 - U.ind eqLb) + (1 - U.ind eqUb)
 
 createThreeValPlan :: S.Set Label -> SwitchTargets -> Platform -> Maybe SwitchPlan
 createThreeValPlan
@@ -297,7 +294,8 @@ createThreeValPlan
         case defLabelOpt of
           Just defLabel ->
             let
-              labelToInts' = M.delete defLabel labelToInts    -- Can never fail but let's silence the ghc warning.
+              labelToInts' = M.delete defLabel labelToInts 
+              -- Can never fail but let's silence the ghc warning.
               (p0, p1) = case M.toList labelToInts' of { [x0, x1] -> (x0, x1); _ -> error "The impossible happened!" }
               p2 = (defLabel, [])        -- We set this to the empty list so that this is never picked for ellimination.
             in
@@ -311,27 +309,30 @@ createThreeValPlan
         classLab2 = classifyCandidate lab2 label2Ints
         classLab3 = classifyCandidate lab3 label3Ints
 
-        candidate = U.maxBy compT classLab1 (U.maxBy compT classLab2 classLab3)
+        cmp = compare `F.on` costOfT
+        candidate = U.minBy cmp classLab1 (U.minBy cmp classLab2 classLab3)
       in
         case candidate of
-          (T (Just (lab, n, eqLb, eqUb))) -> Just $ createFullPlan lab n eqLb eqUb
+          (T (Just (lab, ns, _, _))) -> Just $ createFullPlan lab ns
           (T Nothing) -> Nothing
 
-    classifyCandidate lab [n] = T $ Just (lab, n, n == lb, n == ub)
+    classifyCandidate lab ns@[n] = T $ Just (lab, ns, n == lb, n == ub)
+    classifyCandidate lab ns@[n0, n1] = T $ Just (lab, ns, n0 == lb, n1 == ub)
     classifyCandidate _ _ = T Nothing
 
-    createFullPlan :: Label -> Integer -> Bool -> Bool -> SwitchPlan
-    createFullPlan labelToRemove n eqLb eqUb
+    createFullPlan :: Label -> [Integer] -> SwitchPlan
+    createFullPlan thenLabel ns
       = let
-          intToLabel' = M.delete n intToLabel
-          labelToInts' = M.delete labelToRemove labelToInts
-          range' = if | eqLb -> (lb + 1, ub)
-                      | eqUb -> (lb, ub -1)
-                      | otherwise -> range
+          intToLabel' = L.foldl' (flip M.delete) intToLabel ns
+          labelToInts' = M.delete thenLabel labelToInts
 
-          st' = SwitchTargets signed range' defLabelOpt intToLabel' labelToInts'
+          range' = L.foldl' (\(rlb, rub) n -> (if n == rlb then rlb + 1 else rlb, rub)) range ns
+          range'' = L.foldr (\n (rlb, rub) -> (rlb, if n == rub then rub - 1 else rub)) range' ns
+
+          st' = SwitchTargets signed range'' defLabelOpt intToLabel' labelToInts'
+          elsePlan = createPlan st' platform
         in
-          IfEqual n labelToRemove $ createPlan st' platform
+          createEqPlanWithPlan ns thenLabel elsePlan
 
 createGeneralBitTest :: SwitchTargets -> Platform -> Maybe SwitchPlan
 createGeneralBitTest
@@ -425,7 +426,11 @@ cbp signed doLeftCheck leftPlan doRightCheck rightPlan
 
 createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
 createEqPlan labelInts lab1 lab2
-  = L.foldl' (\plan n -> IfEqual n lab1 plan) (Unconditionally lab2) labelInts
+  = createEqPlanWithPlan labelInts lab1 (Unconditionally lab2)
+
+createEqPlanWithPlan :: [Integer] -> Label -> SwitchPlan -> SwitchPlan
+createEqPlanWithPlan labelInts thenLabel elsePlan
+  = L.foldl' (\plan n -> IfEqual n thenLabel plan) elsePlan labelInts
 
 createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
 createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord
