@@ -13,7 +13,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Function as F
 import qualified Utils as U
 
--- import Debug.Trace
+import Debug.Trace
 
 data SwitchTargets =
     SwitchTargets
@@ -82,17 +82,17 @@ createPlan st platform
       labelSet = let s = M.keysSet (getLabelToInts st) in maybe s (`S.insert` s) (getDefLabel st)
     in
       if | Just plan <- createOneValPlan labelSet
-           -> plan
+           -> trace "1!!!" plan
          | Just plan <- createTwoValPlan labelSet st platform
-           -> plan
+           -> trace "2!!!" plan
          | Just plan <- createThreeValPlan labelSet st platform
-           -> plan
+           -> trace "3!!!" plan
          | Just plan <- createGeneralBitTest st platform
-           -> plan
+           -> trace "4!!!" plan
          | Just plan <- createJumpTable st
-           -> plan
+           -> trace "5!!!" plan
          | otherwise
-           -> createSplitPlan (getSigned st) (splitInterval st) platform
+           -> trace "6!!!" $ createSplitPlan (getSigned st) (splitInterval st) platform
 
 createSplitPlan :: Bool -> (SwitchTargets, Integer, SwitchTargets) -> Platform -> SwitchPlan
 createSplitPlan signed (stLeft, n, stRight) platform = IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
@@ -127,7 +127,7 @@ createTwoValPlan labelSet st@(SwitchTargets _ _ defLabelOpt _ _) platform
 -- Function creates a plan 
 createBitTwoValPlanNoDefault :: SwitchTargets -> Label -> Label -> Integer -> Maybe SwitchPlan
 createBitTwoValPlanNoDefault
-  (SwitchTargets signed (lb, ub) _defLabelOpt _intToLabel labelToInts)
+  (SwitchTargets signed range@(lb, ub) _defLabelOpt _intToLabel labelToInts)
   label1
   label2
   bitsInWord
@@ -193,10 +193,11 @@ createBitTwoValPlanNoDefault
 
              minScore = min region1Score region2Score
            in
+             trace (show region1Score ++ " : " ++ show region2Score ++ " : " ++ show span1 ++ " : " ++ show span2) $
              if minScore >= 10
              then
-               if | region1Count == 3 -> Just $ createEqPlan label1Ints label1 label2
-                  | region2Count == 3 -> Just $ createEqPlan label2Ints label2 label1
+               if | region1Count == 3 -> Just $ createEqPlanFor3 signed label1Ints label1 label2 range
+                  | region2Count == 3 -> Just $ createEqPlanFor3 signed label2Ints label2 label1 range
                   | otherwise -> Nothing
              else
                Just $
@@ -234,6 +235,7 @@ createTwoValPlanWithDefault
                         
           st' = SwitchTargets signed range Nothing intToLabel'' labelToInts''
         in
+          trace (show st') $
            createBitTwoValPlanNoDefault st' label defLabel bitsInWord
       else
         let
@@ -261,7 +263,7 @@ createTwoValPlanWithDefault
                  Just $ cbp signed doLeftCheckRegion defPlanOpt doRightCheckRegion defPlanOpt
                             (createBitTestPlan label labelInts regionLb regionUb defLabel bitsInWord)
                             regionLb regionUb
-             | regionCount == 3 -> Just $ createEqPlan labelInts label defLabel
+             | regionCount == 3 -> Just $ createEqPlanFor3 signed labelInts label defLabel range
              | otherwise -> Nothing
 
 newtype T = T (Maybe (Label, [Integer], Bool, Bool))
@@ -420,6 +422,15 @@ createEqPlan labelInts lab1 lab2
 createEqPlanWithPlan :: [Integer] -> Label -> SwitchPlan -> SwitchPlan
 createEqPlanWithPlan labelInts thenLabel elsePlan
   = L.foldl' (\plan n -> IfEqual n thenLabel plan) elsePlan labelInts
+
+createEqPlanFor3 :: Bool -> [Integer] -> Label -> Label -> (Integer, Integer) -> SwitchPlan
+createEqPlanFor3 signed labelInts lab1 lab2 (lb, ub)
+  = let
+      (n0, n1, n2) = case labelInts of {[x0, x1, x2] -> (x0, x1, x2); _ -> error "The unthinkable happened!" }
+    in
+      if | n0 == lb && n0 + 1 == n1 -> IfLE signed n1 (Unconditionally lab1) (IfEqual n2 lab1 (Unconditionally lab2))
+         | n2 == ub && n2 - 1 == n1 -> IfLT signed n1 (IfEqual n0 lab1 (Unconditionally lab2)) (Unconditionally lab1)
+         | otherwise -> createEqPlan labelInts lab1 lab2
 
 createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
 createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord

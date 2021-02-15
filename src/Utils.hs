@@ -114,5 +114,5 @@ convIntegerToBinary numBits n
   = go numBits 1 ""
   where
     go :: Int -> Integer -> String -> String
-    go 0 _ acc = acc
-    go cnt m acc = go (cnt - 1) (m `Bits.shiftL` 1) $ (if n Bits..&. m /= 0 then '1' else '0') : acc
+    go 0 _ !acc = acc
+    go cnt !m !acc = go (cnt - 1) (m `Bits.shiftL` 1) $ (if n Bits..&. m /= 0 then '1' else '0') : acc

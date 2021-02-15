@@ -41,10 +41,10 @@ mkTestCase testNum (TI cases dtr@(DTR (lb, ub)) tr@(TR (testLb, testUb)) platfor
            numDefaults = length defaults
        when (lb > ub) $ Left "Bad data type range."
        when (testLb > testUb) $ Left "Bad test range."
-       when (numDefaults == 0) (when (testLb < lb || testUb > ub) (Left "When default label is missing, you cannot test outside the datatype range."))
+       when (testLb < lb || testUb > ub) $ Left "Bad test range with respect to datatype range."
        when (numCases == 0) $ Left "No cases specified."
        when (numDefaults > 1) $ Left "Too many defaults."
-       when (numCases == 1 && numDefaults == 0) $ Left "Missing default case."
+       when (numCases == 1 && numDefaults == 0 && ub - lb /= 0) $ Left "Missing default case."
        unless (S.isSubsetOf (M.keysSet intToLabel) (S.fromAscList [lb..ub])) $ Left "Cases outside of datatype range."
        when (S.difference fullSet (M.keysSet intToLabel) /= S.empty && numDefaults /= 1) $ Left "Missing cases but no default specified."
        when (fullSet == M.keysSet intToLabel && numDefaults == 1) $ Left "Default specified when no gaps."
@@ -64,17 +64,20 @@ doTest (testNum, Right (TC (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTar
       (if sShowPlans then putStrLn else putStr) $ "Test " ++ show testNum ++ ":"
       when sShowPlans (putStrLn $ "intToLabel: " ++ show intToLabel)
       when sShowPlans (putStrLn $ "DefaultLabel: " ++ show defLabelOpt)
+      when sShowPlans (putStrLn $ "Range: " ++ show (lb, ub))
       when sShowPlans (putStrLn $ "Plan: " ++ show plan)
       let res = Maybe.catMaybes $ processRes <$> diffs
       if null res then do { putStrLn "Ok!\n"; return True } else do { putStrLn ""; mapM_ putStrLn res; return False }
   where
     plan = SW.createPlan st platform
     eval = EV.eval platform plan
-    diffs = [(n, expected, res) | n <- [testLb..testUb], let expected = lookup n intToLabel defLabelOpt, let res = eval n]
+    diffs = [(n, expected, res) | n <- [testLb..testUb],
+             let expected = lookup n intToLabel defLabelOpt,
+             let res = eval n]
 
     processRes :: (Integer, Label, Either String Label) -> Maybe String
     processRes (n, expectedLabel, Left errStr) = Just $ "For n: " ++ show n ++ " expected: " ++ show expectedLabel ++ " but instead got an error: \"" ++ errStr ++ "\""
-    processRes (n, expectedLabel, Right resultLabel) = if expectedLabel /= resultLabel then Just $ "For n: " ++ show n ++ " expected: " ++ show expectedLabel ++ " but instead got:"  ++ show resultLabel else Nothing
+    processRes (n, expectedLabel, Right resultLabel) = if expectedLabel /= resultLabel then Just $ "For n: " ++ show n ++ " expected: " ++ show expectedLabel ++ " but instead got: "  ++ show resultLabel else Nothing
 
     lookup :: Integer -> M.Map Integer Label -> Maybe Label -> Label
     lookup n m (Just defLabel) = Maybe.fromMaybe defLabel $ M.lookup n m
@@ -90,25 +93,59 @@ lab2 = SW.L 2
 lab3 = SW.L 3
 
 sPlatform :: SW.Platform
-sPlatform = SW.Platform SW.bytesInWordForPlatform
+sPlatform = SW.Platform 1
 
 type STC = (Int, Either String TestCase) -- Switch Test Case
 
-test0_size_1 :: STC
-test0_size_1 = mkTestCase 0 (TI [C 0 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
-test1_size_1 :: STC
-test1_size_1 = mkTestCase 1 (TI [C 1 lab0, D lab1] (DTR (0, 1)) (TR (-2, 2)) sPlatform)
-test2_size_1 :: STC
-test2_size_1 = mkTestCase 2 (TI [C 1 lab0, D lab1] (DTR (0, 5)) (TR (-2, 7)) sPlatform)
+test0_numVals_1_nd = mkTestCase 0 (TI [C 0 lab0] (DTR (0, 0)) (TR (0, 0)) sPlatform)
+test1_numVals_1_nd = mkTestCase 1 (TI [C 0 lab0, C 1 lab0] (DTR (0, 1)) (TR (0, 1)) sPlatform)
+test2_numVals_1_nd = mkTestCase 2 (TI [C 0 lab0, C 1 lab0, C 2 lab0] (DTR (0, 2)) (TR (0, 2)) sPlatform)
 
-test3_size_2 :: STC
-test3_size_2 = mkTestCase 3 (TI [C 0 lab0, C 1 lab1] (DTR (0, 1)) (TR (0, 1)) sPlatform)
-test4_size_2 :: STC
-test4_size_2 = mkTestCase 4 (TI [C 0 lab0, C 1 lab0] (DTR (0, 1)) (TR (0, 1)) sPlatform)
+test3_numVals_1_wd = mkTestCase 3 (TI [C 0 lab0, D lab0] (DTR (0, 1)) (TR (0, 1)) sPlatform)
+test4_numVals_1_wd = mkTestCase 4 (TI [C 0 lab0, C 1 lab0, D lab0] (DTR (0, 5)) (TR (0, 5)) sPlatform)
+test5_numVals_1_wd = mkTestCase 5 (TI [C 1 lab0, C 2 lab0, C 3 lab0, D lab0] (DTR (0, 10)) (TR (0, 10)) sPlatform)
+
+test6_numVals_2_nd = mkTestCase 6 (TI [C 1 lab0, C 2 lab1] (DTR (1, 2)) (TR (1, 2)) sPlatform)
+test7_numVals_2_nd = mkTestCase 7 (TI [C 1 lab0, C 2 lab1, C 3 lab1] (DTR (1, 3)) (TR (1, 3)) sPlatform)
+test8_numVals_2_nd = mkTestCase 8 (TI [C 1 lab0, C 2 lab1, C 3 lab0] (DTR (1, 3)) (TR (1, 3)) sPlatform)
+
+test9_numVals_2_nd = mkTestCase 9 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1] (DTR (1, 4)) (TR (1, 4)) sPlatform)
+
+test10_numVals_2_nd = mkTestCase 10 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
+                                       , C 6 lab0, C 7 lab1, C 8 lab0] (DTR (1, 8)) (TR (1, 8)) sPlatform)
+test11_numVals_2_nd = mkTestCase 11 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab1, C 9 lab1] (DTR (1, 9)) (TR (1, 9)) sPlatform)
+
+test12_numVals_2_nd = mkTestCase 12 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab1, C 9 lab1] (DTR (1, 9)) (TR (1, 9)) sPlatform)
+
+test13_numVals_2_nd = mkTestCase 13 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab1, C 9 lab0, C 10 lab1] (DTR (1, 10)) (TR (1, 10)) sPlatform)
+
+test14_numVals_2_nd = mkTestCase 14 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab1, C 9 lab0, C 10 lab1] (DTR (1, 10)) (TR (1, 10)) sPlatform)
+
+test15_numVals_2_nd = mkTestCase 15 (TI [C 1 lab1, C 2 lab0, C 3 lab1, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab1, C 9 lab1, C 10 lab0, C 11 lab0] (DTR (1, 11)) (TR (1, 11)) sPlatform)
+test16_numVals_2_nd = mkTestCase 16 (TI [C 1 lab1, C 2 lab1, C 3 lab0, C 4 lab0, C 5 lab0
+                                       , C 6 lab0, C 7 lab0, C 8 lab0, C 9 lab0, C 10 lab1, C 11 lab0] (DTR (1, 11)) (TR (1, 11)) sPlatform)
+test17_numVals_2_nd = mkTestCase 17 (TI [C 1 lab1, C 2 lab0, C 3 lab1, C 4 lab0, C 5 lab0
+                                       , C 6 lab0, C 7 lab0, C 8 lab0, C 9 lab0, C 10 lab1, C 11 lab0] (DTR (1, 11)) (TR (1, 11)) sPlatform)
+
+test18_numVals_2_nd = mkTestCase 18 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab1, C 10 lab1, C 11 lab1] (DTR (1, 11)) (TR (1, 11)) sPlatform)
+
+test19_numVals_2_nd = mkTestCase 19 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab0] (DTR (1, 9)) (TR (1, 9)) sPlatform)
 
 allTests :: [STC]
-allTests = [test0_size_1, test1_size_1, test2_size_1
-            , test3_size_2, test4_size_2]
+allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
+            , test3_numVals_1_wd, test4_numVals_1_wd, test5_numVals_1_wd
+            , test6_numVals_2_nd, test7_numVals_2_nd, test8_numVals_2_nd
+            , test9_numVals_2_nd, test10_numVals_2_nd, test11_numVals_2_nd
+            , test12_numVals_2_nd, test13_numVals_2_nd, test14_numVals_2_nd
+            , test15_numVals_2_nd, test16_numVals_2_nd
+            , test17_numVals_2_nd, test18_numVals_2_nd, test19_numVals_2_nd]
 
 executeAndReport :: [IO Bool] -> IO ()
 executeAndReport actions
