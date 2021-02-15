@@ -12,7 +12,8 @@ module Utils (
   , findRegionSeparators
   , findMiddleOfList
   , splitMapInTwo
-  , buildMap) where
+  , buildMap
+  , convIntegerToBinary) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
@@ -106,3 +107,12 @@ buildMap = go M.empty
       = if k `M.member` m
         then Left $ "Duplicate found: " ++ show (k, v)
         else go (M.insert k v m) kvs
+
+{-# INLINABLE convIntegerToBinary #-}
+convIntegerToBinary :: Int -> Integer -> String
+convIntegerToBinary numBits n
+  = go numBits 1 ""
+  where
+    go :: Int -> Integer -> String -> String
+    go 0 _ acc = acc
+    go cnt m acc = go (cnt - 1) (m `Bits.shiftL` 1) $ (if n Bits..&. m /= 0 then '1' else '0') : acc

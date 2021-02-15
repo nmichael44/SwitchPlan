@@ -11,8 +11,6 @@ import qualified Data.Set as S
 import qualified Data.List as L
 import qualified Data.Maybe as Maybe
 import qualified Data.Function as F
-import qualified Data.Char as C
-import qualified Numeric as N
 import qualified Utils as U
 
 -- import Debug.Trace
@@ -52,18 +50,12 @@ bytesInWordForPlatform = 8
 bitsInWordForPlatform :: Int
 bitsInWordForPlatform = bytesInWordForPlatform * 8
 
-zeros :: String
-zeros = replicate bitsInWordForPlatform '0'
-
 instance Show BitTestInfo where
   show :: BitTestInfo -> String
   show BitTestInfo { offset, magicConstant, bitTestFailedPlan }
-    = "BitTestInfo { offset = "
-        ++ show offset
-        ++ ", magicConst = "
-        ++ reverse (take bitsInWordForPlatform (reverse (zeros ++ N.showIntAtBase 2 C.intToDigit magicConstant "")))
-        ++ (", bitTestFailedPlan = " ++ show bitTestFailedPlan
-        ++ " }")
+    = "BitTestInfo { offset = " ++ show offset
+               ++ ", magicConst = " ++ U.convIntegerToBinary bitsInWordForPlatform magicConstant
+               ++ ", bitTestFailedPlan = " ++ show bitTestFailedPlan ++ " }"
 
 data BitTestInfo
     = BitTestInfo { offset :: Maybe Integer, magicConstant :: Integer, bitTestFailedPlan :: SwitchPlan }
