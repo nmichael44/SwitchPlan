@@ -440,14 +440,11 @@ createBracketPlan :: Bool -> Maybe SwitchPlan -> Maybe SwitchPlan -> SwitchPlan
 createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan lb ub
   = case (leftBracketPlanOpt, rightBracketPlanOpt) of
 
-      (Just leftPlan, Just rightPlan)
-        -> IfLT signed lb leftPlan (IfLE signed ub bitTestPlan rightPlan)
+      (Just leftPlan, Just rightPlan) -> IfLT signed lb leftPlan (IfLE signed ub bitTestPlan rightPlan)
 
-      (Just leftPlan, Nothing)
-        -> IfLT signed lb leftPlan bitTestPlan
+      (Just leftPlan, Nothing) -> IfLT signed lb leftPlan bitTestPlan
 
-      (Nothing, Just rightPlan)
-        -> IfLE signed ub bitTestPlan rightPlan
+      (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
 
       (Nothing, Nothing) -> bitTestPlan
 
