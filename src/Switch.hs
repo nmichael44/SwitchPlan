@@ -92,7 +92,7 @@ createPlan st platform
          | Just plan <- createJumpTable st
            -> trace "5!!!" plan
          | otherwise
-           -> trace "6!!!" $ createSplitPlan (getSigned st) (splitInterval st) platform
+           -> trace "6!!!" createSplitPlan (getSigned st) (splitInterval st) platform
 
 createSplitPlan :: Bool -> (SwitchTargets, Integer, SwitchTargets) -> Platform -> SwitchPlan
 createSplitPlan signed (stLeft, n, stRight) platform = IfLT signed n (createPlan stLeft platform) (createPlan stRight platform)
