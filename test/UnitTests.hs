@@ -138,6 +138,12 @@ test18_numVals_2_nd = mkTestCase 18 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab1,
 test19_numVals_2_nd = mkTestCase 19 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
                                        , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab0] (DTR (1, 9)) (TR (1, 9)) sPlatform)
 
+test20_numVals_2_nd = mkTestCase 20 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab0, C 10 lab1] (DTR (1, 10)) (TR (1, 10)) sPlatform)
+
+test21_numVals_2_nd = mkTestCase 21 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
+                                       , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab0, C 10 lab1, C 11 lab1] (DTR (1, 11)) (TR (1, 11)) sPlatform)
+
 allTests :: [STC]
 allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test3_numVals_1_wd, test4_numVals_1_wd, test5_numVals_1_wd
@@ -145,7 +151,8 @@ allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test9_numVals_2_nd, test10_numVals_2_nd, test11_numVals_2_nd
             , test12_numVals_2_nd, test13_numVals_2_nd, test14_numVals_2_nd
             , test15_numVals_2_nd, test16_numVals_2_nd
-            , test17_numVals_2_nd, test18_numVals_2_nd, test19_numVals_2_nd]
+            , test17_numVals_2_nd, test18_numVals_2_nd, test19_numVals_2_nd
+            , test20_numVals_2_nd, test21_numVals_2_nd]
 
 executeAndReport :: [IO Bool] -> IO ()
 executeAndReport actions

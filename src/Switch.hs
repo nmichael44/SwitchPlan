@@ -366,8 +366,8 @@ createJumpTableAux st@(SwitchTargets _signed _range _defLabelOpt intToLabel _lab
       numCases = M.size intToLabel
     in
       if | numCases < minJumpTableSize -> Nothing
-          | not hasBeenExpanded && not (U.isDenseEnough maxJumpTableGapSize $ M.keys intToLabel) -> Nothing
-          | otherwise -> Just $ JumpTable st
+         | hasBeenExpanded || U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel) -> Just $ JumpTable st
+         | otherwise -> Nothing
 
 splitInterval :: SwitchTargets -> (SwitchTargets, Integer, SwitchTargets)
 splitInterval (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _labelToInts)
