@@ -11,13 +11,20 @@ module Utils (
   , ind
   , findRegionSeparators
   , findMiddleOfList
-  , splitMapInTwo
+  , splitMap
+  , LocationOfElement(..)
   , buildMap
-  , convIntegerToBinary) where
+  , convIntegerToBinary
+  , findPairWithMaxNumElems
+  , firstSuccess
+  , computeRangeOfComplement
+  , computeMapWithinRangeInclusive) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
 import qualified Data.Bits as Bits
+import qualified Data.Foldable as F
+import Data.Function (on)
 
 {-# INLINABLE maxBy #-}
 maxBy :: (a -> a -> Ordering) -> a -> a -> a
@@ -85,18 +92,19 @@ findMiddleOfList ns
     go (_ : xs) (_ : _ : ys) = go xs ys
     go [] _ = error "Must never be called on an empty list."
 
+data LocationOfElement = LeftMap | RightMap
+
 -- Splits a (Map k v) into two Maps (m0, m1) such that all keys of m0 are < k and all keys of m1 are >= k.
 -- If k happens to be in the map then it will be found in m1.
-{-# INLINABLE splitMapInTwo #-}
-splitMapInTwo :: Ord k => k -> M.Map k v -> (M.Map k v, M.Map k v)
-splitMapInTwo k m
-  = let
-      vOpt = M.lookup k m
-      p@(m0, m1) = M.split k m
-    in
-      case vOpt of
-        Nothing -> p
-        Just v -> (m0, M.insert k v m1)
+{-# INLINABLE splitMap #-}
+splitMap :: Ord k => k -> M.Map k v -> LocationOfElement -> (M.Map k v, M.Map k v)
+splitMap k m loc
+  = case M.splitLookup k m of
+      (m0, Nothing, m1) -> (m0, m1)
+      (m0, Just v, m1) ->
+        case loc of
+          LeftMap -> (M.insert k v m0, m1)
+          RightMap -> (m0, M.insert k v m1)
 
 {-# INLINABLE buildMap #-}
 buildMap :: (Show k, Show v, Ord k) => [(k, v)] -> Either String (M.Map k v)
@@ -116,3 +124,42 @@ convIntegerToBinary numBits n
     go :: Int -> Integer -> String -> String
     go 0 _ !acc = acc
     go cnt !m !acc = go (cnt - 1) (m `Bits.shiftL` 1) $ (if n Bits..&. m /= 0 then '1' else '0') : acc
+
+{-# INLINABLE findPairWithMaxNumElems #-}
+findPairWithMaxNumElems :: M.Map b [a] -> (b, [a])
+findPairWithMaxNumElems m =
+  F.maximumBy (compare `on` (length . snd)) (M.toList m)
+
+{-# INLINABLE firstSuccess #-}
+firstSuccess :: [Maybe a] -> Maybe a
+firstSuccess
+  = go
+  where
+    go [] = Nothing
+    go (y@(Just _) : _) = y
+    go (Nothing : zs) = firstSuccess zs
+
+{-# INLINABLE computeRangeOfComplement #-}
+computeRangeOfComplement :: (Num k, Ord k) => (k, k) -> M.Map k a -> (k, k)
+computeRangeOfComplement (lb, ub) m
+  = (leftStart, rightStart)
+  where
+    (mn, _) = M.findMin m
+    (mx, _) = M.findMax m
+
+    leftStart = if mn /= lb then lb else goFromLeft mn m
+    rightStart = if mx /= ub then ub else goFromRight mx m
+
+    goFromLeft, goFromRight :: (Num k, Ord k) => k -> M.Map k a -> k
+    goFromLeft n mp
+      = if n `M.member` mp then goFromLeft (n + 1) mp else n
+    goFromRight n mp
+      = if n `M.member` mp then goFromRight (n -1) mp else n
+
+computeMapWithinRangeInclusive :: Ord k => (k, k) -> M.Map k v -> M.Map k v
+computeMapWithinRangeInclusive (lb, ub) m
+  = let
+      (_, p0, m1) = M.splitLookup lb m
+      (m2, _) = splitMap ub (case p0 of { Nothing -> m1; Just v -> M.insert lb v m1 }) LeftMap
+    in
+      m2
