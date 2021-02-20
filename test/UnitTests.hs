@@ -86,14 +86,21 @@ doTest (testNum, Right (TC (DTR (lb, ub)) (TR (testLb, testUb)) st@(SW.SwitchTar
 doTest (testNum, Left err) 
   = do { putStrLn $ "Test " ++ show testNum ++ ":\nInvalid input for test.  Error was: \"" ++ err ++ "\""; return False }
 
-lab0, lab1, lab2, lab3 :: SW.Label
+lab0, lab1, lab2, lab3, lab4, lab5, lab6, lab7, lab8, lab9, lab10 :: SW.Label
 lab0 = SW.L 0
 lab1 = SW.L 1
 lab2 = SW.L 2
 lab3 = SW.L 3
+lab4 = SW.L 4
+lab5 = SW.L 5
+lab6 = SW.L 6
+lab7 = SW.L 7
+lab8 = SW.L 8
+lab9 = SW.L 9
+lab10 = SW.L 10
 
 sPlatform :: SW.Platform
-sPlatform = SW.Platform 1
+sPlatform = SW.Platform 8
 
 type STC = (Int, Either String TestCase) -- Switch Test Case
 
@@ -144,6 +151,31 @@ test20_numVals_2_nd = mkTestCase 20 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1,
 test21_numVals_2_nd = mkTestCase 21 (TI [C 1 lab0, C 2 lab1, C 3 lab0, C 4 lab1, C 5 lab1
                                        , C 6 lab1, C 7 lab1, C 8 lab0, C 9 lab0, C 10 lab1, C 11 lab1] (DTR (1, 11)) (TR (1, 11)) sPlatform)
 
+test22_numVals_2_nd = mkTestCase 22 (TI [C 0 lab0, C 1 lab0, C 100 lab1, C 200 lab2, D lab1] (DTR (0, 300)) (TR (0, 300)) sPlatform)
+test23_numVals_2_nd = mkTestCase 23 (TI [C 0 lab0, C 2 lab1, C 10 lab1, C 299 lab2, C 300 lab2, D lab1] (DTR (0, 300)) (TR (0, 300)) sPlatform)
+test24_numVals_2_nd = mkTestCase 24(TI [C 0 lab0, C 100 lab1, C 150 lab2, C 200 lab2, D lab1] (DTR (0, 300)) (TR (0, 300)) sPlatform)
+
+test25_numVals_2_nd = mkTestCase 25 (TI [C 0 lab0, C 2 lab5, C 10 lab4, C 299 lab2, C 300 lab2, D lab1] (DTR (0, 300)) (TR (0, 300)) sPlatform)
+
+
+test26_numVals_2_nd = mkTestCase 26 (TI [C 0 lab0, C 1 lab0, C 2 lab0, C 4 lab1, C 6 lab1, C 9 lab1, C 50 lab1, D lab2] (DTR (0, 51)) (TR (0, 50)) sPlatform)
+
+test27_numVals_2_nd = mkTestCase 27 (TI [C 0 lab0, C 1 lab1, C 2 lab1, C 3 lab1, C 4 lab1] (DTR (0, 4)) (TR (0, 4)) sPlatform)
+test28_numVals_2_nd = mkTestCase 28 (TI [C 0 lab0, C 1 lab0, C 2 lab1, C 3 lab1, C 4 lab1] (DTR (0, 4)) (TR (0, 4)) sPlatform)
+test29_numVals_2_nd = mkTestCase 29 (TI [C 0 lab0, C 1 lab1, C 2 lab0, C 3 lab1, C 4 lab1] (DTR (0, 4)) (TR (0, 4)) sPlatform)
+test30_numVals_2_nd = mkTestCase 30 (TI [C 0 lab0, C 1 lab0, C 2 lab0, C 3 lab0, C 23 lab0, C 44 lab0, C 60 lab0, C 61 lab0, D lab1] (DTR (0, 200)) (TR (0, 200)) sPlatform)
+test31_numVals_2_nd = mkTestCase 31 (TI [C 0 lab0, C 1 lab0, C 2 lab0, C 3 lab0, C 23 lab0, C 44 lab0, C 60 lab0, C 61 lab0, C 63 lab0, D lab1] (DTR (0, 200)) (TR (0, 200)) sPlatform)
+test32_numVals_2_nd = mkTestCase 32 (TI [C 0 lab0, C 1 lab0, C 2 lab0, C 3 lab0, C 23 lab0, C 44 lab0, C 60 lab0, C 61 lab0, C 64 lab0, D lab1] (DTR (0, 200)) (TR (0, 200)) sPlatform)
+test33_numVals_2_nd = mkTestCase 33 (TI [C 0 lab0, C 10 lab1, C 11 lab0, C 13 lab0, C 14 lab0, C 17 lab0, C 60 lab0, C 61 lab0, C 64 lab0, D lab1] (DTR (0, 200)) (TR (0, 200)) sPlatform)
+test34_numVals_2_nd = mkTestCase 34 (TI [C 0 lab0, C 100 lab1, C 199 lab3, C 200 lab0, C 300 lab0, C 400 lab0, C 700 lab0, C 800 lab0, D lab1] (DTR (0, 1000)) (TR (0, 1000)) sPlatform)
+test35_numVals_2_nd = mkTestCase 35 (TI [C 1 lab0, C 2 lab0, C 3 lab2, C 4 lab2, C 5 lab0, C 6 lab1] (DTR (1, 6)) (TR (1, 6)) sPlatform)
+
+test36_numVals_2_nd = mkTestCase 36 (TI [C 1 lab0, C 2 lab1, C 3 lab2, C 4 lab0, C 5 lab1,
+                                         C 6 lab0, C 7 lab1, C 8 lab0, C 9 lab1,
+                                         C 10 lab0, C 11 lab1, C 12 lab0, C 13 lab1] (DTR (1, 13)) (TR (1, 13)) sPlatform)
+
+test37_numVals_2_nd = mkTestCase 37 (TI [C 1 lab0, C 2 lab0, C 3 lab1, C 4 lab0, C 5 lab1] (DTR (1, 5)) (TR (1, 5)) sPlatform)
+
 allTests :: [STC]
 allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test3_numVals_1_wd, test4_numVals_1_wd, test5_numVals_1_wd
@@ -152,7 +184,22 @@ allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test12_numVals_2_nd, test13_numVals_2_nd, test14_numVals_2_nd
             , test15_numVals_2_nd, test16_numVals_2_nd
             , test17_numVals_2_nd, test18_numVals_2_nd, test19_numVals_2_nd
-            , test20_numVals_2_nd, test21_numVals_2_nd]
+            , test20_numVals_2_nd, test21_numVals_2_nd
+            , test22_numVals_2_nd, test23_numVals_2_nd, test24_numVals_2_nd
+            , test25_numVals_2_nd
+            , test26_numVals_2_nd
+            , test27_numVals_2_nd
+            , test28_numVals_2_nd
+            , test29_numVals_2_nd
+            , test30_numVals_2_nd
+            , test31_numVals_2_nd
+            , test32_numVals_2_nd
+            , test33_numVals_2_nd
+            , test34_numVals_2_nd
+            , test35_numVals_2_nd
+            , test36_numVals_2_nd
+            , test37_numVals_2_nd
+          ]
 
 executeAndReport :: [IO Bool] -> IO ()
 executeAndReport actions
