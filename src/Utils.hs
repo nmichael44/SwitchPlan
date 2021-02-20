@@ -158,8 +158,4 @@ computeRangeOfComplement (lb, ub) m
 
 computeMapWithinRangeInclusive :: Ord k => (k, k) -> M.Map k v -> M.Map k v
 computeMapWithinRangeInclusive (lb, ub) m
-  = let
-      (_, p0, m1) = M.splitLookup lb m
-      (m2, _) = splitMap ub (case p0 of { Nothing -> m1; Just v -> M.insert lb v m1 }) LeftMap
-    in
-      m2
+  = fst $ splitMap ub (snd $ splitMap lb m RightMap) LeftMap
