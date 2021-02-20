@@ -502,38 +502,3 @@ createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan (lb,
       (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
 
       (Nothing, Nothing) -> bitTestPlan
-
-l1 :: Label
-l1 = L 1
-l2 :: Label
-l2 = L 2
-l3 :: Label
-l3 = L 3
-
-st1 :: SwitchTargets
-st1 = mkSwitchTargets True (1,10) (Just l3)
-       (M.fromList [(3, l2), (6, l1), (7, l1)])
-
-pl :: Platform
-pl = Platform 64
-
-{-
-st2 :: SwitchTargets
-st2 = mkSwitchTargets True (0, 7) Nothing
-       (M.fromList [(0, lab1), (1, lab1), (2, lab2), (3, lab2),
-                    (4, lab1), (5, lab1), (6, lab1), (7, lab1)])
-
-st3 :: SwitchTargets
-st3 = mkSwitchTargets True (-1, 6) Nothing
-       (M.fromList [(-1, lab1), (0, lab1), (1, lab2), (2, lab2),
-                    (3, lab1), (4, lab1), (5, lab1), (6, lab1)])
-
-st4 :: SwitchTargets
-st4 = mkSwitchTargets True (1,5) Nothing
-       (M.fromList [(1, lab2), (2, lab1), (3, lab1), (4, lab2), (5, lab1)])
-
-st5 :: SwitchTargets
-st5 = mkSwitchTargets True (0,9) Nothing
-       (M.fromList [(0, lab2), (1, lab1), (2, lab1), (3, lab1), (4, lab2), (5, lab1),
-                    (6, lab1), (7, lab1), (8, lab1), (9, lab1)])
--}
