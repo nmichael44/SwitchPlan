@@ -346,7 +346,7 @@ buildPlanForBitTestType2 regionLb regionUb defLabelOpt bitsInWord ls
 
       canSkipOffset = regionLb >= 0 && 2 * regionUb < bitsInWord
       (offset2, constants) = if canSkipOffset then (Nothing, nns)
-                              else (Just regionLb, L.map (L.map (\n -> n - regionLb)) nns)
+                             else (Just regionLb, L.map (L.map (\n -> n - regionLb)) nns)
 
       (magicConstant2, bitPatterns) = U.calcMagicConstant2 constants
       testFailedLabel = case defLabelOpt of { Just l -> l; Nothing -> fst $ last sortedOnLength }
