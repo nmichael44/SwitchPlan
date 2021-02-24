@@ -1,10 +1,13 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE TupleSections #-}
 
 module Utils (
   maxBy
   , minBy
   , calcMagicConstant
+  , calcMagicConstant2
   , calcRevMap
   , isDense
   , isDenseEnough
@@ -18,12 +21,15 @@ module Utils (
   , findPairWithMaxNumElems
   , firstSuccess
   , computeRangeOfComplement
-  , computeMapWithinRangeInclusive) where
+  , computeMapWithinRangeInclusive
+  , eliminateKeyFromMaps
+  , impossible) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
 import qualified Data.Bits as Bits
 import qualified Data.Foldable as F
+import qualified Data.Maybe as Maybe
 import Data.Function (on)
 
 {-# INLINABLE maxBy #-}
@@ -41,6 +47,17 @@ calcMagicConstant xs bitsInWord = c
     bitsInW = bitsInWord - 1
     c = L.foldl' (\acc x -> (Bits..|.) acc (shiftToPos x)) (0 :: Integer) xs
     shiftToPos n = Bits.shiftL (1 :: Integer) (fromIntegral (bitsInW - n))
+
+bitPatternsForMC2 :: [Integer]
+bitPatternsForMC2 = [0b01, 0b10, 0b11]
+
+{-# INLINABLE calcMagicConstant2 #-}
+calcMagicConstant2 :: [[Integer]] -> (Integer, [Integer])
+calcMagicConstant2 xxs = (c, L.take cnt bitPatternsForMC2)
+  where
+    cnt = length xxs
+    numWithPattern = concatMap (\(xs, pat) -> map (\n -> (fromIntegral n, pat)) xs) $ zip xxs bitPatternsForMC2
+    c = L.foldl' (\acc (n, pat) -> (Bits..|.) acc (Bits.shiftL pat (n + n))) 0 numWithPattern
 
 {-# INLINABLE calcRevMap #-}
 calcRevMap :: Ord b => M.Map a b -> M.Map b [a]
@@ -132,12 +149,7 @@ findPairWithMaxNumElems m =
 
 {-# INLINABLE firstSuccess #-}
 firstSuccess :: [Maybe a] -> Maybe a
-firstSuccess
-  = go
-  where
-    go [] = Nothing
-    go (y@(Just _) : _) = y
-    go (Nothing : zs) = firstSuccess zs
+firstSuccess = L.foldr (\opt res -> case opt of { Just _ -> opt; Nothing -> res }) Nothing
 
 {-# INLINABLE computeRangeOfComplement #-}
 computeRangeOfComplement :: (Num k, Ord k) => (k, k) -> M.Map k a -> (k, k)
@@ -159,3 +171,14 @@ computeRangeOfComplement (lb, ub) m
 computeMapWithinRangeInclusive :: Ord k => (k, k) -> M.Map k v -> M.Map k v
 computeMapWithinRangeInclusive (lb, ub) m
   = fst $ splitMap ub (snd $ splitMap lb m RightMap) LeftMap
+
+{-# INLINABLE eliminateKeyFromMaps #-}
+eliminateKeyFromMaps :: (Ord k1, Ord k2) => k2 -> M.Map k1 k2 -> M.Map k2 [k1] -> (M.Map k1 k2, M.Map k2 [k1])
+eliminateKeyFromMaps k2 m0 m1
+  = let
+      keys = Maybe.fromMaybe [] (M.lookup k2 m1)
+    in
+      (L.foldl' (flip M.delete) m0 keys, M.delete k2 m1)
+
+impossible :: () -> as
+impossible () = error "The impossible happened!"
