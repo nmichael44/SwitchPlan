@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BinaryLiterals #-}
 
 module Eval where
 
@@ -9,6 +10,7 @@ import Switch
 import qualified Data.Bits as Bits
 import qualified Data.Map.Lazy as M
 import qualified Data.Maybe as Maybe
+import qualified Data.List as L
 
 eval :: Platform -> SwitchPlan -> Integer -> Either String Label
 eval platform plan n = go plan
@@ -33,6 +35,16 @@ eval platform plan n = go plan
         = go $ if ((magicConstant `Bits.shiftL` fromIntegral (n - Maybe.fromMaybe 0 offset)) Bits..&. msb) /= 0
               then bitTestSucceededPlan
               else bitTestFailedPlan
+
+    go (BitTestType2 BitTestType2Info { offset2, magicConstant2, bitTestFailedPlan2 } intLabel)
+      = let
+          offset = Maybe.fromMaybe 0 offset2
+          expr = fromIntegral $ n - offset
+          d = ((magicConstant2 `Bits.shiftR` expr) `Bits.shiftR` expr) Bits..&. 0b11
+        in
+          case L.lookup d intLabel of
+            Just l -> Right l
+            Nothing -> go bitTestFailedPlan2
 
     go (JumpTable (SwitchTargets _signed _range defLabelOpt intToLabel _))
       = case M.lookup n intToLabel of
