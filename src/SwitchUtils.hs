@@ -3,7 +3,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TupleSections #-}
 
-module Utils (
+module SwitchUtils (
   maxBy
   , minBy
   , calcMagicConstant

@@ -13,7 +13,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Either as Either
 import qualified Switch as SW
 import qualified Eval as EV
-import qualified Utils as U
+import qualified SwitchUtils as U
 import Control.Monad ( when, unless )
 import Debug.Trace ( trace )
 

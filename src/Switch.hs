@@ -11,7 +11,7 @@ import qualified Data.Set as S
 import qualified Data.List as L
 import qualified Data.Maybe as Maybe
 import qualified Data.Foldable as F
-import qualified Utils as U
+import qualified SwitchUtils as U
 
 import Debug.Trace
 
