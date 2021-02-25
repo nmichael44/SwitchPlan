@@ -190,6 +190,10 @@ test43_numVals_2_nd = mkTestCase 43 (TI [C 1 lab0, C 2 lab1, C 3 lab2, C 4 lab0,
                                          C 7 lab0, C 8 lab1, C 9 lab2, C 10 lab0, C 11 lab1, C 12 lab2,
                                          C 13 lab0, C 14 lab1, C 15 lab2, C 16 lab0, D lab1] (DTR (-1, 20)) (TR (-1, 20)) sPlatform)
 
+test44_numVals_2_nd = mkTestCase 44 (TI [C 1 lab0, C 2 lab1, C 3 lab1, C 4 lab0, C 5 lab1, C 6 lab1,
+                                         C 7 lab0, C 8 lab1, C 9 lab0, C 10 lab0, C 11 lab1, C 12 lab1,
+                                         C 13 lab2, C 14 lab3, C 15 lab0, C 16 lab1] (DTR (1, 16)) (TR (1, 16)) sPlatform)
+
 allTests :: [STC]
 allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test3_numVals_1_wd, test4_numVals_1_wd, test5_numVals_1_wd
@@ -219,6 +223,7 @@ allTests = [test0_numVals_1_nd, test1_numVals_1_nd, test2_numVals_1_nd
             , test41_numVals_2_nd
             , test42_numVals_2_nd
             , test43_numVals_2_nd
+            , test44_numVals_2_nd
           ]
 
 executeAndReport :: [IO Bool] -> IO ()
