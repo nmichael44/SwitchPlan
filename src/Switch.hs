@@ -91,6 +91,9 @@ newtype Platform = Platform Int
 platformWordSizeInBytes :: Platform -> Int
 platformWordSizeInBytes (Platform n) = n
 
+switchTableEnabled :: Bool
+switchTableEnabled = False
+
 createPlan :: SwitchTargets -> Platform -> SwitchPlan
 createPlan st platform
   = let
@@ -107,9 +110,9 @@ createPlan st platform
            -> trace "2!!!" plan
          | numLabels == 3, Just plan <- createThreeValPlan st bitsInWord platform
            -> trace "3!!!" plan
-         | Just plan <- createGeneralBitTest labelSet st platform
+         | numLabels == 4, Just plan <- createFourValPlan st bitsInWord platform
            -> trace "4!!!" plan
-         | Just plan <- createJumpTable st
+         | switchTableEnabled, Just plan <- createJumpTable st
            -> trace "5!!!" plan
          | otherwise
            -> trace "6!!!" $ createSplitPlan (getSigned st) (splitInterval st) platform
@@ -273,75 +276,84 @@ createTwoValPlanWithDefault
              | otherwise -> Nothing
 
 createThreeValPlan :: SwitchTargets -> Integer -> Platform -> Maybe SwitchPlan
-createThreeValPlan
-  (SwitchTargets signed (lb, ub) defLabelOpt intToLabel labelToInts)
+createThreeValPlan = createValPlan 3
+
+createFourValPlan :: SwitchTargets -> Integer -> Platform -> Maybe SwitchPlan
+createFourValPlan = createValPlan 4
+
+createValPlan :: Int -> SwitchTargets -> Integer -> Platform -> Maybe SwitchPlan
+createValPlan
+  numVals
+  (SwitchTargets signed range@(lb, ub) defLabelOpt intToLabel labelToInts)
   bitsInWord
   platform
   = case simplePlan of
       Just _ -> simplePlan
-      Nothing -> tryBitTestType2Plan ()
+      Nothing -> tryBitTestType2Plan signed range bitsInWord defLabelOpt intToLabel' numOfValsForIfStatement labelInts
   where
+    numOfValsForIfStatement = numVals - 1
+
     (intToLabel', labelToInts')
       = case defLabelOpt of
           Just defLabel -> U.eliminateKeyFromMaps defLabel intToLabel labelToInts
           Nothing -> (intToLabel, labelToInts)
 
-    ls = M.toList labelToInts'
+    labelInts = M.toList labelToInts'
 
-    simplePlan = U.firstSuccess $ map tryOneLabelElimination ls
+    simplePlan = U.firstSuccess $ map tryOneLabelElimination labelInts
 
     tryOneLabelElimination :: (Label, [Integer]) -> Maybe SwitchPlan
-    tryOneLabelElimination (lab, labelInts)
-      = case labelInts of
+    tryOneLabelElimination (lab, labelCases)
+      = case labelCases of
           [n] | n == lb || n == ub
             -> let
-                 intToLabel'' = M.delete n intToLabel'
-                 labelToInts'' = M.delete lab labelToInts'
-                 range' = if n == lb then (lb + 1, ub) else (lb, ub - 1)
-                 st' = SwitchTargets signed range' defLabelOpt intToLabel'' labelToInts''
-                 elsePlan = createPlan st' platform
-               in Just $ createEqPlanWithPlan labelInts lab elsePlan
+                  intToLabel'' = M.delete n intToLabel'
+                  labelToInts'' = M.delete lab labelToInts'
+                  range' = if n == lb then (lb + 1, ub) else (lb, ub - 1)
+                  st' = SwitchTargets signed range' defLabelOpt intToLabel'' labelToInts''
+                  elsePlan = createPlan st' platform
+                in Just $ createEqPlanWithPlan labelCases lab elsePlan
           _ -> Nothing
 
-    tryBitTestType2Plan :: () -> Maybe SwitchPlan
-    tryBitTestType2Plan ()
-      = let
-          totalSpan = ub - lb + 1
+tryBitTestType2Plan :: Bool -> (Integer, Integer) -> Integer -> Maybe Label
+                      -> M.Map Integer Label -> Int -> [(Label, [Integer])] -> Maybe SwitchPlan
+tryBitTestType2Plan signed (lb, ub) bitsInWord defLabelOpt intToLabel numOfValsForIfStatement labelInts
+  = let
+      totalSpan = ub - lb + 1
+    in
+      trace (show totalSpan) $
+      if 2 * totalSpan <= bitsInWord
+      then Just $ buildPlanForTotalSpan ()
+      else
+        let
+          (mn, _) = M.findMin intToLabel
+          (mx, _) = M.findMax intToLabel
+          regionSpan = mx - mn + 1
         in
-          trace (show totalSpan) $
-          if 2 * totalSpan <= bitsInWord
-          then Just $ buildPlanForTotalSpan ()
-          else
-            let
-              (mn, _) = M.findMin intToLabel'
-              (mx, _) = M.findMax intToLabel'
-              regionSpan = mx - mn + 1
-            in
-              trace (show regionSpan) $
-              if 2 * regionSpan <= bitsInWord
-              then Just $ buildPlanForPartialSpan mn mx
-              else Nothing
-      where
-        buildPlanForTotalSpan :: () -> SwitchPlan
-        buildPlanForTotalSpan () = fst $ buildPlanForBitTestType2 lb ub defLabelOpt bitsInWord ls
+          trace (show regionSpan) $
+          if 2 * regionSpan <= bitsInWord
+          then Just $ buildPlanForPartialSpan mn mx
+          else Nothing
+  where
+    buildPlanForTotalSpan :: () -> SwitchPlan
+    buildPlanForTotalSpan () = fst $ buildPlanForBitTestType2 numOfValsForIfStatement lb ub defLabelOpt bitsInWord labelInts
 
-        buildPlanForPartialSpan :: Integer -> Integer -> SwitchPlan
-        buildPlanForPartialSpan regionLb regionUb
-          = let
-              (bitTestPlan, bitTestFailedPlan) = buildPlanForBitTestType2 regionLb regionUb defLabelOpt bitsInWord ls
-              doLeftCheck = lb < regionLb
-              doRightCheck = ub > regionUb
+    buildPlanForPartialSpan :: Integer -> Integer -> SwitchPlan
+    buildPlanForPartialSpan regionLb regionUb
+      = let
+          (bitTestPlan, bitTestFailedPlan) = buildPlanForBitTestType2 numOfValsForIfStatement regionLb regionUb defLabelOpt bitsInWord labelInts
+          doLeftCheck = lb < regionLb
+          doRightCheck = ub > regionUb
 
-              leftPlan = Just bitTestFailedPlan
-              rightPlan = leftPlan
-            in
-              cbp signed doLeftCheck leftPlan doRightCheck rightPlan bitTestPlan (regionLb, regionUb)
+          failedPlanOpt = Just bitTestFailedPlan
+        in
+          cbp signed doLeftCheck failedPlanOpt doRightCheck failedPlanOpt bitTestPlan (regionLb, regionUb)
 
-buildPlanForBitTestType2 :: Integer -> Integer -> Maybe Label -> Integer -> [(Label, [Integer])] -> (SwitchPlan, SwitchPlan)
-buildPlanForBitTestType2 regionLb regionUb defLabelOpt bitsInWord ls
+buildPlanForBitTestType2 :: Int -> Integer -> Integer -> Maybe Label -> Integer -> [(Label, [Integer])] -> (SwitchPlan, SwitchPlan)
+buildPlanForBitTestType2 numberOfLabelsForPlan regionLb regionUb defLabelOpt bitsInWord ls
   = let
       sortedOnLength = L.sortOn (negate . length . snd) ls
-      labelsForTest = L.take 2 sortedOnLength
+      labelsForTest = L.take numberOfLabelsForPlan sortedOnLength
       nns = L.map snd labelsForTest
 
       canSkipOffset = regionLb >= 0 && 2 * regionUb < bitsInWord
@@ -354,6 +366,8 @@ buildPlanForBitTestType2 regionLb regionUb defLabelOpt bitsInWord ls
       bitTestType2Info = BitTestType2Info { offset2 = offset2, magicConstant2 = magicConstant2, bitTestFailedPlan2 = bitTestFailedPlan }
       intLabels = zip bitPatterns (L.map fst labelsForTest)
     in
+      trace ("numlabelsforplan: " ++ show numberOfLabelsForPlan) $
+      trace (show sortedOnLength)
       (BitTestType2 bitTestType2Info intLabels, bitTestFailedPlan)
 
 pNumerator :: Int
@@ -441,27 +455,26 @@ minJumpTableOffset :: Integer
 minJumpTableOffset = 2
 
 maxExpandSizeForDefaultForJumpTableOptimization :: Integer
-maxExpandSizeForDefaultForJumpTableOptimization = 48
+maxExpandSizeForDefaultForJumpTableOptimization = 64
 
 createJumpTable :: SwitchTargets -> Maybe SwitchPlan
 createJumpTable st@(SwitchTargets _signed (lb, ub) defLabelOpt intToLabel _labelToInts)
-  = case defLabelOpt of
-      Just _ ->
-        let
-          spanOfFullRegion = ub - lb + 1
-        in
-          if spanOfFullRegion <= maxExpandSizeForDefaultForJumpTableOptimization
-          then createJumpTableAux (expandRegion st lb ub) True
-          else
-            let
-              (regionLb, _) = M.findMin intToLabel
-              (regionUb, _) = M.findMax intToLabel
-              spanOfCases = regionUb - regionLb + 1
-            in
-              if spanOfCases <= maxExpandSizeForDefaultForJumpTableOptimization
-              then createJumpTableAux (expandRegion st regionLb regionUb) True
-              else createJumpTableAux st False
-      Nothing -> createJumpTableAux st True
+  = if | Just _ <- defLabelOpt
+       -> let
+            spanOfFullRegion = ub - lb + 1
+          in
+            if spanOfFullRegion <= maxExpandSizeForDefaultForJumpTableOptimization
+            then createJumpTableAux (expandRegion st lb ub) True
+            else
+              let
+                (regionLb, _) = M.findMin intToLabel
+                (regionUb, _) = M.findMax intToLabel
+                spanOfCases = regionUb - regionLb + 1
+              in
+                if spanOfCases <= maxExpandSizeForDefaultForJumpTableOptimization
+                then createJumpTableAux (expandRegion st regionLb regionUb) True
+                else createJumpTableAux st False
+       | otherwise -> createJumpTableAux st True
 
 createJumpTableAux :: SwitchTargets -> Bool -> Maybe SwitchPlan
 createJumpTableAux st@(SwitchTargets _signed _range _defLabelOpt intToLabel _labelToInts) hasBeenExpanded
