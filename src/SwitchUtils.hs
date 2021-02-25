@@ -66,16 +66,10 @@ calcRevMap = M.foldrWithKey' (\n label m -> M.insertWith (++) label [n] m) M.emp
 {-# INLINABLE isDense #-}
 isDense :: [Integer] -> Bool
 isDense [] = True
-isDense ys = lenList == regionSpan
+isDense (current : ys) = go current ys
   where
-    firstNum = head ys
-    (lenList, lastNum) = go ys 1
-    regionSpan = fromIntegral (lastNum - firstNum) + 1
-
-    go :: [Integer] -> Int -> (Int, Integer)
-    go [n] !len = (len, n)
-    go (_ : ns) !len = go ns (len + 1)
-    go [] _ = error "The impossible happened!"
+    go prev (cur : xs) = cur - prev == 1 && go cur xs
+    go _prev [] = True
 
 {-# INLINABLE isDenseEnough #-}
 isDenseEnough :: Integer -> [Integer] -> Bool
