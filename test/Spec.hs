@@ -10,7 +10,7 @@ import qualified Data.Set as S
 import qualified Data.Maybe as Maybe
 import qualified Switch as SW
 import qualified Eval as EV
-import qualified Utils as U
+import qualified SwitchUtils as U
 
 import UnitTests
 
