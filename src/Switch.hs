@@ -599,7 +599,7 @@ findSegment bitsInWord defOpt intLabelList
       tr muplyWayOpt $
       trace "" $
 -}
-     if | Just res <- fullCoverage bitTest1     -> tr "here" $ res                                        -- If any one of the schemes gives full coverage then pick it
+     if | Just res <- fullCoverage bitTest1     -> res                                        -- If any one of the schemes gives full coverage then pick it
         | Just res <- fullCoverage bitTest2     -> res                                        -- with priority BitTest1, BitTest2, MultiWayJump
         | Just res <- fullCoverage multiWayJump -> res
         | otherwise ->
