@@ -585,8 +585,8 @@ getMultiWayJumpSegment intLabelList
         then (segSiz, res, ls)
         else loop n restIntLabel (segSiz + 1) (p : res)
 
-findSegment ::  Integer -> [IntLabel] -> Maybe Label -> (SegmentTypeWithSize, [IntLabel])
-findSegment bitsInWord intLabelList defOpt
+findSegment ::  Integer -> Maybe Label -> [IntLabel] -> (SegmentTypeWithSize, [IntLabel])
+findSegment bitsInWord defOpt intLabelList
   =
 {-
       trace "" $
@@ -599,45 +599,52 @@ findSegment bitsInWord intLabelList defOpt
       tr muplyWayOpt $
       trace "" $
 -}
-     if | Just res <- fullCoverage bitTest1Opt -> res
-        | Just res <- fullCoverage bitTest2Opt -> res
-        | Just res <- fullCoverage muplyWayOpt -> res
+     if | Just res <- fullCoverage bitTest1     -> tr "here" $ res                                        -- If any one of the schemes gives full coverage then pick it
+        | Just res <- fullCoverage bitTest2     -> res                                        -- with priority BitTest1, BitTest2, MultiWayJump
+        | Just res <- fullCoverage multiWayJump -> res
         | otherwise ->
-            case (bitTest1Opt, bitTest2Opt, muplyWayOpt) of
+            case (bitTest1, bitTest2, multiWayJump) of
               (Just res1, Nothing, Nothing) -> res1                                           -- If it's the only one that covers some range, pick this one.
               (Just res1@((size1, _), _), Just res2@((size2, _), _), Nothing)
                 -> if size1 >= size2 then res1 else res2                                      -- Pick the one that covers the most range.
               (Just res1@((size1, _), _), Nothing, Just res3@((size3, _), _))
                 -> if size1 >= size3 then res1 else res3                                      -- Pick the one that covers the most range.
               (Just res1@((size1, _), _), Just res2@((size2, _), _), Just res3@((size3, _), _))
-                -> case (size1 >= size2, size1 >= size3, size2 >= size3) of
-                      (True, True, _) -> res1
-                      (True, False, _) -> res3
-                      (False, _, True) -> res2
-                      (False, _, False) -> res3
+                -> if size1 >= size2
+                   then if size1 >= size3 then res1 else res3
+                   else if size2 >= size3 then res2 else res3
               (Nothing, Just res2, Nothing) -> res2
               (Nothing, Just res2@((size2, _), _), Just res3@((size3, _), _))
                 -> if size2 >= size3 then res2 else res3
-              
+
               (Nothing, Nothing, Just res3) -> res3
               (Nothing, Nothing, Nothing) -> ((1, IsolatedValuesSegment [head intLabelList]), tail intLabelList)
 
   where
-    bitTest1Opt = getType1BitTestSegment bitsInWord intLabelList defOpt
-    bitTest2Opt = getType2BitTestSegment bitsInWord intLabelList defOpt
-    muplyWayOpt = getMultiWayJumpSegment intLabelList
+    bitTest1     = getType1BitTestSegment bitsInWord intLabelList defOpt
+    bitTest2     = getType2BitTestSegment bitsInWord intLabelList defOpt
+    multiWayJump = getMultiWayJumpSegment intLabelList
    
     fullCoverage :: Maybe (SegmentTypeWithSize, [IntLabel]) -> Maybe (SegmentTypeWithSize, [IntLabel])
     fullCoverage res@(Just (_, [])) = res
     fullCoverage _                  = Nothing
 
-createPlan' :: SwitchTargets -> Platform -> SwitchPlan
-createPlan' st platform
+splitIntoSegments :: Integer -> Maybe Label -> [IntLabel] -> [SegmentTypeWithSize]
+splitIntoSegments bitsInWord defOpt = go
+  where
+    go :: [IntLabel] -> [SegmentTypeWithSize]
+    go [] = []
+    go ls
+      = let (segmentWithSize, rest) = findSegment bitsInWord defOpt ls
+        in segmentWithSize : go rest
+
+createPlan' :: Integer -> SwitchTargets -> Platform -> SwitchPlan
+createPlan' bitsInWord st platform
   = undefined
 
   where
-    splitIntoSegments :: [IntLabel] -> [SegmentType]
-    splitIntoSegments intLabelList = undefined
+    defOpt :: Maybe Label
+    defOpt = Nothing
 
     mkPlan :: [SegmentType] -> SwitchPlan
     mkPlan segmentList = undefined
@@ -657,7 +664,7 @@ lab5 :: Label
 lab5 = L 5
 
 cs0 :: [(Integer, Label)]
-cs0 = [(1, lab1), (2, lab2), (3, lab1), (30, lab2), (40, lab1), (70, lab2)]
+cs0 = [(1, lab1), (2, lab2), (3, lab1), (30, lab2), (40, lab1), (64, lab2)]
 
 cs1 :: [(Integer, Label)]
 cs1 = [(1, lab1), (2, lab2), (3, lab2), (4, lab1), (7, lab2)
