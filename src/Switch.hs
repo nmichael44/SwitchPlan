@@ -542,12 +542,12 @@ getGenericBitTestSegment segConstr labelSizePred bitsInWord intLabelList defOpt
 
     labelSet = S.insert startLabel (maybe S.empty S.singleton defOpt)
     (segmentSize, segment, restOfList)
-      = let (segSiz, seg, rest) = loop (tail intLabelList) labelSet 0 []
+      = let (segSiz, seg, rest) = go (tail intLabelList) labelSet 0 []
         in (segSiz + 1, segConstr $ startIntLabel : reverse seg, rest)
 
-    loop :: [IntLabel] -> S.Set Label -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
-    loop [] _ segSiz result = (segSiz, result, [])
-    loop xs@(p@(n, lab) : restIntLabel) labSet segSiz result
+    go :: [IntLabel] -> S.Set Label -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
+    go [] _ segSiz result = (segSiz, result, [])
+    go xs@(p@(n, lab) : restIntLabel) labSet segSiz result
       = let
           totalSpan = n - startNum + 1
         in
@@ -558,7 +558,7 @@ getGenericBitTestSegment segConstr labelSizePred bitsInWord intLabelList defOpt
               labSet' = S.insert lab labSet
             in
               if labelSizePred $ S.size labSet'
-              then loop restIntLabel labSet' (segSiz + 1) (p : result)
+              then go restIntLabel labSet' (segSiz + 1) (p : result)
               else (segSiz, result, xs)
 
 getType1BitTestSegment :: Integer -> [IntLabel] -> Maybe Label -> Maybe (SegmentTypeWithSize, [IntLabel])
@@ -572,18 +572,18 @@ getMultiWayJumpSegment intLabelList
   = let
       startIntLabel@(startNum, _) = head intLabelList
 
-      (segmentSiz, jumpTableIntLabels, restOfList) = let (segSiz, ls, rest) = loop startNum (tail intLabelList) 0 [] in (segSiz + 1, startIntLabel : reverse ls, rest)
+      (segmentSiz, jumpTableIntLabels, restOfList) = let (segSiz, ls, rest) = go startNum (tail intLabelList) 0 [] in (segSiz + 1, startIntLabel : reverse ls, rest)
     in
       if segmentSiz < minJumpTableSize
       then Nothing
       else Just ((segmentSiz, MultiWayJumpSegment jumpTableIntLabels), restOfList)
   where
-    loop :: Integer -> [IntLabel] -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
-    loop _ [] segSiz res = (segSiz, res, [])
-    loop previous ls@(p@(n, _) : restIntLabel) segSiz res
+    go :: Integer -> [IntLabel] -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
+    go _ [] segSiz res = (segSiz, res, [])
+    go previous ls@(p@(n, _) : restIntLabel) segSiz res
       = if n - previous >= maxJumpTableHole
         then (segSiz, res, ls)
-        else loop n restIntLabel (segSiz + 1) (p : res)
+        else go n restIntLabel (segSiz + 1) (p : res)
 
 findSegment ::  Integer -> Maybe Label -> [IntLabel] -> (SegmentTypeWithSize, [IntLabel])
 findSegment bitsInWord defOpt intLabelList
