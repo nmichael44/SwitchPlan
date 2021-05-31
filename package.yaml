@@ -22,6 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 - containers
+- profunctors
 
 library:
   source-dirs: src
@@ -30,6 +31,8 @@ library:
   - -Wincomplete-uni-patterns
   - -Wpartial-fields
   - -O2
+  - -ddump-simpl
+#  - -ddump-asm
 
 executables:
   SwitchPlan-exe:

@@ -23,7 +23,12 @@ module SwitchUtils (
   , computeRangeOfComplement
   , computeMapWithinRangeInclusive
   , eliminateKeyFromMaps
-  , impossible) where
+  , impossible
+--  , splitAtHoles
+--  , restrictMap
+--  , reassocTuples
+--  , breakTooSmall
+   ) where
 
 import qualified Data.Map.Lazy as M
 import qualified Data.List as L
@@ -176,3 +181,34 @@ eliminateKeyFromMaps k2 m0 m1
 
 impossible :: () -> as
 impossible () = error "The impossible happened!"
+
+{-
+splitAtHoles :: Integer -> M.Map Integer a -> [M.Map Integer a]
+splitAtHoles _        m | M.null m = []
+splitAtHoles holeSize m = map (`restrictMap` m) nonHoles
+  where
+    holes = filter (\(l,h) -> h - l > holeSize) $ zip (M.keys m) (tail (M.keys m))
+    nonHoles = reassocTuples lo holes hi
+
+    (lo,_) = M.findMin m
+    (hi,_) = M.findMax m
+
+restrictMap :: (Integer,Integer) -> M.Map Integer b -> M.Map Integer b
+restrictMap (lo,hi) m = mid
+  where (_,   mid_hi) = M.split (lo-1) m
+        (mid, _) =      M.split (hi+1) mid_hi
+
+reassocTuples :: a -> [(a,a)] -> a -> [(a,a)]
+reassocTuples initial [] last
+    = [(initial,last)]
+reassocTuples initial ((a,b):tuples) last
+    = (initial,a) : reassocTuples b tuples last
+
+minJumpTableSize :: Int
+minJumpTableSize = 5
+
+breakTooSmall :: M.Map Integer a -> [M.Map Integer a]
+breakTooSmall m
+  | M.size m > minJumpTableSize = [m]
+  | otherwise                   = [M.singleton k v | (k,v) <- M.toList m]
+-}

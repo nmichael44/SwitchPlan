@@ -133,7 +133,7 @@ createTwoValPlan labelSet st@(SwitchTargets _ _ defLabelOpt _ _) bitsInWord
   = let  -- Can never fail but let's silence the ghc warning.
       (label1, label2) = case S.toList labelSet of { [lab1, lab2] -> (lab1, lab2); _ -> U.impossible () }
     in
-      case defLabelOpt of 
+      case defLabelOpt of
         Just defLabel -> createTwoValPlanWithDefault st (if label1 == defLabel then label2 else label1) bitsInWord
         Nothing -> createBitTwoValPlanNoDefault st label1 label2 bitsInWord
 
@@ -156,7 +156,7 @@ createBitTwoValPlanNoDefault
 
       region1Count = length label1Ints
       region2Count = length label2Ints
-      
+
       span1 = region1Ub - region1Lb + 1
       span2 = region2Ub - region2Lb + 1
       totalSpan = ub - lb + 1
@@ -242,7 +242,7 @@ createTwoValPlanWithDefault
 
           intToLabel'' = L.foldl' (\m (i, l) -> M.insert i l m) intToLabel' numLabelForDefault
           labelToInts'' = M.insert defLabel (fst <$> numLabelForDefault) labelToInts'
-                        
+
           st' = SwitchTargets signed range Nothing intToLabel'' labelToInts''
         in
           trace (show st') $
@@ -376,8 +376,8 @@ pNumerator = 1
 pDenominator :: Int
 pDenominator = 2
 
-maxJumpTableGapSize :: Integer
-maxJumpTableGapSize = 6
+maxJumpTableHole :: Integer
+maxJumpTableHole = 7
 
 minJumpTableSize :: Int
 minJumpTableSize = 5
@@ -413,14 +413,14 @@ createJumpTableAux st@(SwitchTargets _signed _range _defLabelOpt intToLabel _lab
       numCases = M.size intToLabel
     in
       if | numCases < minJumpTableSize -> Nothing
-         | hasBeenExpanded || U.isDenseEnough maxJumpTableGapSize (M.keys intToLabel) -> Just $ JumpTable st
+         | hasBeenExpanded || U.isDenseEnough maxJumpTableHole (M.keys intToLabel) -> Just $ JumpTable st
          | otherwise -> Nothing
 
 splitInterval :: SwitchTargets -> (SwitchTargets, Integer, SwitchTargets)
 splitInterval (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _labelToInts)
   = let
       caseInts = M.keys intToLabel
-      regionSeparators = U.findRegionSeparators maxJumpTableGapSize caseInts
+      regionSeparators = U.findRegionSeparators maxJumpTableHole caseInts
       midSeparator = U.findMiddleOfList regionSeparators
 
       (intToLabelLeft, intToLabelRight) = U.splitMap midSeparator intToLabel U.RightMap
@@ -455,7 +455,7 @@ expandRegion (SwitchTargets signed range@(lb, ub) defLabelOpt@(Just defLabel) in
 
 expandRegion (SwitchTargets _ _ Nothing _ _) _ _ = U.impossible ()
 
-cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan 
+cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan -> SwitchPlan
        -> (Integer, Integer) -> SwitchPlan
 cbp signed doLeftCheck leftPlan doRightCheck rightPlan
   = createBracketPlan
@@ -508,3 +508,218 @@ createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan (lb,
       (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
 
       (Nothing, Nothing) -> bitTestPlan
+
+-------------------------------------------------------------
+
+tr :: Show a => a -> b -> b
+tr obj = trace (show obj)
+
+type IntLabel = (Integer, Label)
+
+data SegmentType =
+    IsolatedValuesSegment [IntLabel]
+  | BitTestType1Segment [IntLabel]
+  | BitTestType2Segment [IntLabel]
+  | MultiWayJumpSegment [IntLabel]
+  deriving Show
+
+type SegmentTypeWithSize = (Int, SegmentType)
+
+minBitTestSize :: Int
+minBitTestSize = 4
+
+type SegmentConstructor = [IntLabel] -> SegmentType
+type LabelSizePredicate = Int -> Bool
+
+getGenericBitTestSegment :: SegmentConstructor -> LabelSizePredicate -> Integer
+                            -> [IntLabel] -> Maybe Label -> Maybe (SegmentTypeWithSize, [IntLabel])
+getGenericBitTestSegment segConstr labelSizePred bitsInWord intLabelList defOpt
+  = if segmentSize < minBitTestSize
+    then Nothing
+    else Just ((segmentSize, segment), restOfList)
+  where
+    startIntLabel@(startNum, startLabel) = head intLabelList
+
+    labelSet = S.insert startLabel (maybe S.empty S.singleton defOpt)
+    (segmentSize, segment, restOfList)
+      = let (segSiz, seg, rest) = loop (tail intLabelList) labelSet 0 []
+        in (segSiz + 1, segConstr $ startIntLabel : reverse seg, rest)
+
+    loop :: [IntLabel] -> S.Set Label -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
+    loop [] _ segSiz result = (segSiz, result, [])
+    loop xs@(p@(n, lab) : restIntLabel) labSet segSiz result
+      = let
+          totalSpan = n - startNum + 1
+        in
+          if totalSpan > bitsInWord
+          then (segSiz, result, xs)
+          else
+            let
+              labSet' = S.insert lab labSet
+            in
+              if labelSizePred $ S.size labSet'
+              then loop restIntLabel labSet' (segSiz + 1) (p : result)
+              else (segSiz, result, xs)
+
+getType1BitTestSegment :: Integer -> [IntLabel] -> Maybe Label -> Maybe (SegmentTypeWithSize, [IntLabel])
+getType1BitTestSegment bitsInWord = getGenericBitTestSegment BitTestType1Segment (<= 2) bitsInWord
+
+getType2BitTestSegment :: Integer -> [IntLabel] -> Maybe Label -> Maybe (SegmentTypeWithSize, [IntLabel])
+getType2BitTestSegment bitsInWord = getGenericBitTestSegment BitTestType2Segment (<= 4) (bitsInWord `div` 2)
+
+getMultiWayJumpSegment :: [IntLabel] -> Maybe (SegmentTypeWithSize, [IntLabel])
+getMultiWayJumpSegment intLabelList
+  = let
+      startIntLabel@(startNum, _) = head intLabelList
+
+      (segmentSiz, jumpTableIntLabels, restOfList) = let (segSiz, ls, rest) = loop startNum (tail intLabelList) 0 [] in (segSiz + 1, startIntLabel : reverse ls, rest)
+    in
+      if segmentSiz < minJumpTableSize
+      then Nothing
+      else Just ((segmentSiz, MultiWayJumpSegment jumpTableIntLabels), restOfList)
+  where
+    loop :: Integer -> [IntLabel] -> Int -> [IntLabel] -> (Int, [IntLabel], [IntLabel])
+    loop _ [] segSiz res = (segSiz, res, [])
+    loop previous ls@(p@(n, _) : restIntLabel) segSiz res
+      = if n - previous >= maxJumpTableHole
+        then (segSiz, res, ls)
+        else loop n restIntLabel (segSiz + 1) (p : res)
+
+findSegment ::  Integer -> [IntLabel] -> Maybe Label -> (SegmentTypeWithSize, [IntLabel])
+findSegment bitsInWord intLabelList defOpt
+  =
+{-
+      trace "" $
+      tr intLabelList $
+      trace "" $
+      tr bitTest1Opt $
+      trace "" $
+      tr bitTest2Opt $
+      trace "" $
+      tr muplyWayOpt $
+      trace "" $
+-}
+     if | Just res <- fullCoverage bitTest1Opt -> res
+        | Just res <- fullCoverage bitTest2Opt -> res
+        | Just res <- fullCoverage muplyWayOpt -> res
+        | otherwise ->
+            case (bitTest1Opt, bitTest2Opt, muplyWayOpt) of
+              (Just res1, Nothing, Nothing) -> res1                                           -- If it's the only one that covers some range, pick this one.
+              (Just res1@((size1, _), _), Just res2@((size2, _), _), Nothing)
+                -> if size1 >= size2 then res1 else res2                                      -- Pick the one that covers the most range.
+              (Just res1@((size1, _), _), Nothing, Just res3@((size3, _), _))
+                -> if size1 >= size3 then res1 else res3                                      -- Pick the one that covers the most range.
+              (Just res1@((size1, _), _), Just res2@((size2, _), _), Just res3@((size3, _), _))
+                -> case (size1 >= size2, size1 >= size3, size2 >= size3) of
+                      (True, True, _) -> res1
+                      (True, False, _) -> res3
+                      (False, _, True) -> res2
+                      (False, _, False) -> res3
+              (Nothing, Just res2, Nothing) -> res2
+              (Nothing, Just res2@((size2, _), _), Just res3@((size3, _), _))
+                -> if size2 >= size3 then res2 else res3
+              
+              (Nothing, Nothing, Just res3) -> res3
+              (Nothing, Nothing, Nothing) -> ((1, IsolatedValuesSegment [head intLabelList]), tail intLabelList)
+
+  where
+    bitTest1Opt = getType1BitTestSegment bitsInWord intLabelList defOpt
+    bitTest2Opt = getType2BitTestSegment bitsInWord intLabelList defOpt
+    muplyWayOpt = getMultiWayJumpSegment intLabelList
+   
+    fullCoverage :: Maybe (SegmentTypeWithSize, [IntLabel]) -> Maybe (SegmentTypeWithSize, [IntLabel])
+    fullCoverage res@(Just (_, [])) = res
+    fullCoverage _                  = Nothing
+
+createPlan' :: SwitchTargets -> Platform -> SwitchPlan
+createPlan' st platform
+  = undefined
+
+  where
+    splitIntoSegments :: [IntLabel] -> [SegmentType]
+    splitIntoSegments intLabelList = undefined
+
+    mkPlan :: [SegmentType] -> SwitchPlan
+    mkPlan segmentList = undefined
+
+    segmentToPlan :: SegmentType -> SwitchPlan
+    segmentToPlan segmentType = undefined
+
+lab1 :: Label
+lab1 = L 1
+lab2 :: Label
+lab2 = L 2
+lab3 :: Label
+lab3 = L 3
+lab4 :: Label
+lab4 = L 4
+lab5 :: Label
+lab5 = L 5
+
+cs0 :: [(Integer, Label)]
+cs0 = [(1, lab1), (2, lab2), (3, lab1), (30, lab2), (40, lab1), (70, lab2)]
+
+cs1 :: [(Integer, Label)]
+cs1 = [(1, lab1), (2, lab2), (3, lab2), (4, lab1), (7, lab2)
+      , (31, lab1), (32, lab2), (33, lab1)
+      , (63, lab1), (64, lab2), (65, lab1)]
+
+cs2 :: [(Integer, Label)]
+cs2 = [(1, lab1), (2, lab2), (3, lab2), (4, lab1), (7, lab2)
+      , (31, lab3), (32, lab2), (33, lab1)
+      , (63, lab1), (64, lab2), (65, lab1)]
+
+cs3 :: [(Integer, Label)]
+cs3 = [(1, lab1), (2, lab2), (3, lab2), (4, lab1), (7, lab2)
+      , (15, lab3), (16, lab2), (17, lab1)
+      , (31, lab1), (32, lab2), (33, lab1)]
+
+cs4 :: [(Integer, Label)]
+cs4 = [(1, lab1), (2, lab2), (3, lab3), (4, lab4), (7, lab2)
+      , (11, lab3), (13, lab5), (14, lab1)
+      , (15, lab3), (16, lab5), (17, lab1)
+      , (21, lab1), (25, lab2), (29, lab1)
+      , (31, lab1), (32, lab2), (33, lab1)]
+
+cs5 :: [(Integer, Label)]
+cs5 = [(1, lab1), (100, lab2), (200, lab3), (300, lab4)]
+
+m :: M.Map Integer Label
+m = M.fromList cs0
+
+splitAtHoles :: Integer -> M.Map Integer a -> [M.Map Integer a]
+splitAtHoles _        m | M.null m = []
+splitAtHoles holeSize m = map (\range -> restrictMap range m) nonHoles
+  where
+    holes = filter (\(l,h) -> h - l > holeSize) $ zip (M.keys m) (tail (M.keys m))
+    nonHoles = reassocTuples lo holes hi
+
+    (lo,_) = M.findMin m
+    (hi,_) = M.findMax m
+
+restrictMap :: (Integer,Integer) -> M.Map Integer b -> M.Map Integer b
+restrictMap (lo,hi) m = mid
+  where (_,   mid_hi) = M.split (lo-1) m
+        (mid, _) =      M.split (hi+1) mid_hi
+
+-- for example: reassocTuples a [(b,segSiz),(d,e)] f == [(a,b),(segSiz,d),(e,f)]
+reassocTuples :: a -> [(a,a)] -> a -> [(a,a)]
+reassocTuples initial [] last
+    = [(initial,last)]
+reassocTuples initial ((a,b):tuples) last
+    = (initial,a) : reassocTuples b tuples last
+
+{-# NOINLINE f #-}
+f :: Int -> Int
+f x = x + 1 
+
+{-# NOINLINE g #-}
+g :: Int -> Int
+g x = 2 * x 
+
+foo :: Int -> Int
+foo x
+  = case (f x, g x) of
+      (1, _) -> 100
+      (_, 2) -> 200
+      _      -> 300
