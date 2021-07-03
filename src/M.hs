@@ -2,6 +2,8 @@
 
 module M where
 
+import qualified Data.Map.Strict as Map
+
 data Tree a = Leaf a | Node (Tree a) (Tree a)
 
 countLeafs :: Tree a -> Int 
@@ -66,3 +68,10 @@ relabel' t
           t0' <- go t0
           t1' <- go t1
           return $ Node t0' t1'
+
+insertWith' :: Ord k => (a -> b -> b) -> (a -> b) -> k -> a -> Map.Map k b -> Map.Map k b
+insertWith' f g k x
+  = Map.alter (\oy ->
+                 Just $ case oy of
+                          Just y -> f x y
+                          Nothing -> g x) k

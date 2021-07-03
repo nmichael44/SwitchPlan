@@ -31,7 +31,8 @@ library:
   - -Wincomplete-uni-patterns
   - -Wpartial-fields
   - -O2
-#  - -ddump-simpl
+  - -fno-full-laziness
+  - -ddump-simpl
 #  - -ddump-asm
 
 executables:

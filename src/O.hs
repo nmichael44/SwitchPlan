@@ -178,6 +178,7 @@ instance Profunctor Return where
   dimap :: (a' -> a) -> (r -> r') -> Return a r -> Return a' r'
   dimap f g (Re h) = Re (g . h . f)
 
+{-
 data Ei a b = L a | R b
 
 instance Functor (Ei a) where
@@ -225,3 +226,5 @@ rev2 xs = loop xs []
     loop :: [a] -> [a] -> [a]
     loop [] = id
     loop (x : xs) = loop xs . (x :)
+
+-}
