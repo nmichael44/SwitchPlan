@@ -756,7 +756,7 @@ data SegmentType
     , casesAreDense :: Bool
     , cases :: [IntLabel]
     }
-  | ThreeLabelsContiguiousRegions {
+  | ContiguiousRegions {
       segSize :: Int 
     , segLb :: Integer
     , segUb :: Integer
@@ -872,9 +872,9 @@ maxNumberOfLabelContiguousRegions = 3
 minNumberOfCasesConsumedByContiguousRegions :: Int
 minNumberOfCasesConsumedByContiguousRegions = 0
 
-getThreeLabelContiguousRegions :: [IntLabel] -> Maybe Label
-                                  -> Maybe (SegmentType, [IntLabel])
-getThreeLabelContiguousRegions intLabelList defOpt
+getContiguousRegions :: [IntLabel] -> Maybe Label
+                        -> Maybe (SegmentType, [IntLabel])
+getContiguousRegions intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
     in
@@ -884,7 +884,7 @@ getThreeLabelContiguousRegions intLabelList defOpt
              let
                contiguousSegments = L.map mkContSegment segments
              in
-                (ThreeLabelsContiguiousRegions {
+                (ContiguiousRegions {
                    segSize = totalSegSize
                  , segLb = cSegLb . L.head $ contiguousSegments
                  , segUb = cSegUb . L.last $ contiguousSegments
