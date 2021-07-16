@@ -768,8 +768,7 @@ data SegmentType
       segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
-    , casesAreDense :: Bool
-    , casesForTest :: [IntLabel]
+    , casesForTest :: [IntLabel] -- This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
     , casesForTestSize :: Int
     , otherLabel :: Maybe Label
     }
@@ -869,29 +868,24 @@ mergeConsecutiveIsolatedSegments
 maxNumberOfLabelContiguousRegions :: Int
 maxNumberOfLabelContiguousRegions = 3
 
-minNumberOfCasesConsumedByContiguousRegions :: Int
-minNumberOfCasesConsumedByContiguousRegions = 0
-
 getContiguousRegions :: [IntLabel] -> Maybe Label
                         -> Maybe (SegmentType, [IntLabel])
 getContiguousRegions intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
     in
-      if totalSegSize < minNumberOfCasesConsumedByContiguousRegions
-      then Nothing
-      else Just $
-             let
-               contiguousSegments = L.map mkContSegment segments
-             in
-                (ContiguiousRegions {
-                   segSize = totalSegSize
-                 , segLb = cSegLb . L.head $ contiguousSegments
-                 , segUb = cSegUb . L.last $ contiguousSegments
-                 , numberOfSegments = numberOfSegments
-                 , contiguousSegments = contiguousSegments
-                 , otherLabel = defOpt
-                 }, rest)
+      Just $
+        let
+          contiguousSegments = L.map mkContSegment segments
+        in
+           (ContiguiousRegions {
+              segSize = totalSegSize
+            , segLb = cSegLb . L.head $ contiguousSegments
+            , segUb = cSegUb . L.last $ contiguousSegments
+            , numberOfSegments = numberOfSegments
+            , contiguousSegments = contiguousSegments
+            , otherLabel = defOpt
+            }, rest)
   where
     mkContSegment :: (Label, [IntLabel]) -> ContiguousSegment
     mkContSegment (label, segCases)
@@ -917,7 +911,7 @@ getContiguousRegions intLabelList defOpt
     splitIntoContSegments [] totalSegSize numberOfSegments res
       = (totalSegSize, numberOfSegments, L.reverse res, [])
 
-    splitIntoContSegments xs totalSegSize numberOfSegments res
+    splitIntoContSegments xs !totalSegSize numberOfSegments res
       = if numberOfSegments >= maxNumberOfLabelContiguousRegions
         then (totalSegSize, numberOfSegments, L.reverse res, xs)
         else let
@@ -944,38 +938,39 @@ getContiguousRegions intLabelList defOpt
           | otherwise = (label, res, bs)
         go _ _ = U.impossible ()
 
--- todo: Revisit this function again.
--- what is going on with other label.
-
 getTwoLabelsType1Segment :: Integer -> [IntLabel] -> Maybe Label
                             -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType1Segment bitsInWord intLabelList defOpt
-  = go (tail intLabelList) labelSet 1 startNum True casesForTestInitial casesForTestSizeInitial
+  = go (tail intLabelList) labelSet 1 startNum casesForTestInitial casesForTestSizeInitial
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (maybe S.empty S.singleton defOpt)
+  
     otherLabel = Maybe.fromMaybe startLabel defOpt
 
     (casesForTestInitial, casesForTestSizeInitial)
       = if startLabel == otherLabel then ([], 0)
                                     else ([startIntLabel], 1)
 
-    go :: [IntLabel] -> S.Set Label -> Int -> Integer -> Bool -> [IntLabel] -> Int
+    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> SegmentType
+    mkSegment segSize segUb casesForTestSize casesForTest
+      = TwoLabelsType1 {
+          segSize = segSize
+        , segLb = startNum
+        , segUb = segUb
+        , casesForTest = L.reverse casesForTest
+        , casesForTestSize = casesForTestSize
+        , otherLabel = Just otherLabel
+        }
+
+    go :: [IntLabel] -> S.Set Label -> Int -> Integer -> [IntLabel] -> Int
           -> Maybe (SegmentType, [IntLabel])
-    go [] _ segSize segUb isDense casesForTest casesForTestSize
+    go [] _ segSize segUb casesForTest casesForTestSize
       = if segSize < minBitTestSize
         then Nothing
-        else Just (TwoLabelsType1 {
-                    segSize = segSize
-                  , segLb = startNum
-                  , segUb = segUb
-                  , casesAreDense = isDense
-                  , casesForTest = L.reverse casesForTest
-                  , casesForTestSize = casesForTestSize
-                  , otherLabel = Just otherLabel
-                  }, [])
+        else Just (mkSegment segSize segUb casesForTestSize casesForTest, [])
 
-    go xs@(p@(n, lab) : restIntLabel) labSet segSize segUb isDense casesForTest casesForTestSize
+    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest !casesForTestSize
       = let
           totalSpan = n - startNum + 1
           labSet' = S.insert lab labSet
@@ -984,31 +979,19 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           then
             if segSize < minBitTestSize
             then Nothing
-            else Just (TwoLabelsType1 {
-                        segSize = segSize
-                      , segLb = startNum
-                      , segUb = segUb
-                      , casesAreDense = isDense
-                      , casesForTest = L.reverse casesForTest
-                      , casesForTestSize = casesForTestSize
-                      , otherLabel = Just otherLabel
-                      }, xs)
+            else Just (mkSegment segSize segUb casesForTestSize casesForTest, xs)
           else
             let
               segSize' = segSize + 1
               segUb' = n
-              (casesForTest', isDense', casesForTestSize')
-                = if lab == otherLabel
-                  then (casesForTest, isDense, casesForTestSize)
-                  else (p : casesForTest,
-                        isDense && (L.null casesForTest || n == fst (head casesForTest) + 1),
-                        casesForTestSize + 1)
+              (casesForTest', casesForTestSize')
+                | lab == otherLabel  = (casesForTest, casesForTestSize)
+                | otherwise = (p : casesForTest, casesForTestSize + 1)
             in
               go restIntLabel
                  labSet'
                  segSize'
                  segUb'
-                 isDense'
                  casesForTest'
                  casesForTestSize'
 
