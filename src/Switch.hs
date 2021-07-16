@@ -868,17 +868,15 @@ mergeConsecutiveIsolatedSegments
 maxNumberOfLabelContiguousRegions :: Int
 maxNumberOfLabelContiguousRegions = 3
 
-getContiguousRegions :: [IntLabel] -> Maybe Label
+getContiguousRegions :: [IntLabel]
+                        -> Maybe Label
                         -> Maybe (SegmentType, [IntLabel])
 getContiguousRegions intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
+      contiguousSegments = L.map mkSegment segments
     in
-      Just $
-        let
-          contiguousSegments = L.map mkContSegment segments
-        in
-           (ContiguiousRegions {
+      Just (ContiguiousRegions {
               segSize = totalSegSize
             , segLb = cSegLb . L.head $ contiguousSegments
             , segUb = cSegUb . L.last $ contiguousSegments
@@ -887,8 +885,8 @@ getContiguousRegions intLabelList defOpt
             , otherLabel = defOpt
             }, rest)
   where
-    mkContSegment :: (Label, [IntLabel]) -> ContiguousSegment
-    mkContSegment (label, segCases)
+    mkSegment :: (Label, [IntLabel]) -> ContiguousSegment
+    mkSegment (label, segCases)
       = let
           orderedSegCases = L.reverse segCases
           segLb = fst . head $ orderedSegCases
@@ -902,10 +900,10 @@ getContiguousRegions intLabelList defOpt
         }
 
     splitIntoContSegments ::
-        [IntLabel] -- the input list
-        -> Int -- total number of cases consumed (totalSegSize)
-        -> Int -- number of cont segments
-        -> [(Label, [IntLabel])]
+        [IntLabel]               -- the input list
+        -> Int                   -- total number of cases consumed (totalSegSize)
+        -> Int                   -- number of cont segments
+        -> [(Label, [IntLabel])] -- accumation variable
         -> (Int, Int, [(Label, [IntLabel])], [IntLabel])
  
     splitIntoContSegments [] totalSegSize numberOfSegments res
@@ -938,8 +936,10 @@ getContiguousRegions intLabelList defOpt
           | otherwise = (label, res, bs)
         go _ _ = U.impossible ()
 
-getTwoLabelsType1Segment :: Integer -> [IntLabel] -> Maybe Label
-                            -> Maybe (SegmentType, [IntLabel])
+getTwoLabelsType1Segment :: Integer
+                         -> [IntLabel]
+                         -> Maybe Label
+                         -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType1Segment bitsInWord intLabelList defOpt
   = go (tail intLabelList) labelSet 1 startNum casesForTestInitial casesForTestSizeInitial
   where
@@ -996,7 +996,8 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
                  casesForTestSize'
 
 getTwoLabelsType2Segment :: Integer
-                         -> [IntLabel] -> Maybe Label
+                         -> [IntLabel] 
+                         -> Maybe Label
                          -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType2Segment bitsInWord intLabelList defOpt
   = go intLabelList 0 0 intLabelList M.empty
@@ -1005,7 +1006,8 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           -> Int
           -> Int
           -> [IntLabel]
-          -> M.Map Label (Integer, Bool, [IntLabel]) -> Maybe (SegmentType, [IntLabel])
+          -> M.Map Label (Integer, Bool, [IntLabel])
+          -> Maybe (SegmentType, [IntLabel])
     go [] segSize _ listAtLastAdded m = (, listAtLastAdded) <$> mkSegment segSize m
     go (p@(n, lab) : rest) !segSize !saturatedCount listAtLastAdded m
       = case M.lookup lab m of
