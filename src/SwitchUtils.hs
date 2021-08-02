@@ -23,6 +23,8 @@ module SwitchUtils (
   , computeRangeOfComplement
   , computeMapWithinRangeInclusive
   , eliminateKeyFromMaps
+  , rangeSpan
+  , revAndLen
   , impossible
 --  , splitAtHoles
 --  , restrictMap
@@ -178,6 +180,18 @@ eliminateKeyFromMaps k2 m0 m1
       keys = Maybe.fromMaybe [] (M.lookup k2 m1)
     in
       (L.foldl' (flip M.delete) m0 keys, M.delete k2 m1)
+
+{-# INLINE rangeSpan #-}
+rangeSpan :: Integral a => a -> a -> a
+rangeSpan startN endN = endN - startN + 1
+
+revAndLen :: [a] -> (Int, [a])
+revAndLen xs
+  = go xs 0 []
+  where
+    go :: [a] -> Int -> [a] -> (Int, [a])
+    go [] len res = (len, res)
+    go (y : ys) !len res = go ys (len + 1) (y : res)
 
 impossible :: () -> as
 impossible () = error "The impossible happened!"

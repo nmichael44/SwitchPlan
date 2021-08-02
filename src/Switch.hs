@@ -547,7 +547,7 @@ nm + kk -> L3
 _       -> L4
 
 with or without default.  The default label is allowed to be any of the existing labels.
-The second and third region are allowed to not be there.
+The third region is allowed to not be there.
 
 Assuming n1 <= exp <= nk, this is compiled into:
 
@@ -623,7 +623,7 @@ and spanL2 <= bitsInWord for the second example (since L1 is the default label).
 
 Assuming n1 <= exp <= nk, and assuming spanL2 <= bitsInWord this is compiled into:
 
-  1. if (firstNOfL2 <= e && e <= lastNOfL2 && (magicContantForL2 << (exp - firstNOfL2)) < 0)
+  1. if (firstNOfL2 <= exp && exp <= lastNOfL2 && (magicContantForL2 << (exp - firstNOfL2)) < 0)
        goto L2;
      else
        goto L1;
@@ -669,6 +669,8 @@ this is compiled into:
        goto L2;
 
   Also see note (***) above which is also appicable here.
+
+  We don't currently implement this one.
 
 Three/Four Labels:
 ==================
@@ -737,11 +739,12 @@ data ContiguousSegment
       cSegLabel :: Label
     , cSegLb :: Integer
     , cSegUb :: Integer
-    , cSegCases :: [IntLabel]}
+    , cSegCases :: [IntLabel]
+    , cIsDefault :: Bool}
   deriving Eq
 
 instance Show ContiguousSegment where
-  show (ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases })
+  show ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases }
     = "\nContiguousSegment {\n"
       ++ "  SegLabel: " ++ show cSegLabel ++ "\n"
       ++ "  SegLb: " ++ show cSegLb ++ "\n"
@@ -756,21 +759,27 @@ data SegmentType
     , casesAreDense :: Bool
     , cases :: [IntLabel]
     }
-  | ContiguiousRegions {
-      segSize :: Int 
+  |  GotoLabel {
+      label :: Label
+    , segLb :: Integer
+    , segUb :: Integer
+    }
+  | ContiguousRegions {
+      segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
     , numberOfSegments :: Int
     , contiguousSegments :: [ContiguousSegment]
-    , otherLabel :: Maybe Label
+    , defLabel :: Maybe Label
   }
   | TwoLabelsType1 {
       segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
-    , casesForTest :: [IntLabel] -- This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
+    , labelForCases :: Label
+    , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
     , casesForTestSize :: Int
-    , otherLabel :: Maybe Label
+    , otherLabel :: Label
     }
   | TwoLabelsType2 {
       segSize :: Int
@@ -778,10 +787,10 @@ data SegmentType
     , segUb :: Integer
     , labelForCases :: Label
     , casesForTest :: [IntLabel]
+    , casesForTestSize :: Int
     , lbForTest :: Integer
     , ubForTest :: Integer
-    , casesForTestSize :: Int
-    , otherLabel :: Maybe Label
+    , otherLabel :: Label
     }
   | FourLabels {
       segSize :: Int
@@ -876,14 +885,24 @@ getContiguousRegions intLabelList defOpt
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
       contiguousSegments = L.map mkSegment segments
     in
-      Just (ContiguiousRegions {
+      Just (
+        case contiguousSegments of
+          [ContiguousSegment {
+            cSegLabel = label
+          , cSegLb = segLb
+          , cSegUb = segUb
+          , cIsDefault = isDefault}] | isDefault
+            -> GotoLabel {label = label, segLb = segLb, segUb = segUb}
+          _ ->
+            ContiguousRegions {
               segSize = totalSegSize
             , segLb = cSegLb . L.head $ contiguousSegments
             , segUb = cSegUb . L.last $ contiguousSegments
             , numberOfSegments = numberOfSegments
             , contiguousSegments = contiguousSegments
-            , otherLabel = defOpt
-            }, rest)
+            , defLabel = defOpt
+            }
+            , rest)
   where
     mkSegment :: (Label, [IntLabel]) -> ContiguousSegment
     mkSegment (label, segCases)
@@ -897,6 +916,7 @@ getContiguousRegions intLabelList defOpt
           , cSegLb = segLb
           , cSegUb = segUb
           , cSegCases = orderedSegCases
+          , cIsDefault = Just label == defOpt
         }
 
     splitIntoContSegments ::
@@ -905,7 +925,7 @@ getContiguousRegions intLabelList defOpt
         -> Int                   -- number of cont segments
         -> [(Label, [IntLabel])] -- accumation variable
         -> (Int, Int, [(Label, [IntLabel])], [IntLabel])
- 
+
     splitIntoContSegments [] totalSegSize numberOfSegments res
       = (totalSegSize, numberOfSegments, L.reverse res, [])
 
@@ -945,7 +965,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (maybe S.empty S.singleton defOpt)
-  
+
     otherLabel = Maybe.fromMaybe startLabel defOpt
 
     (casesForTestInitial, casesForTestSizeInitial)
@@ -958,9 +978,10 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           segSize = segSize
         , segLb = startNum
         , segUb = segUb
+        , labelForCases = snd . head $ casesForTest
         , casesForTest = L.reverse casesForTest
         , casesForTestSize = casesForTestSize
-        , otherLabel = Just otherLabel
+        , otherLabel = otherLabel
         }
 
     go :: [IntLabel] -> S.Set Label -> Int -> Integer -> [IntLabel] -> Int
@@ -972,7 +993,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
 
     go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest !casesForTestSize
       = let
-          totalSpan = n - startNum + 1
+          totalSpan = U.rangeSpan startNum n
           labSet' = S.insert lab labSet
         in
           if totalSpan > bitsInWord || S.size labSet' > 2
@@ -996,70 +1017,136 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
                  casesForTestSize'
 
 getTwoLabelsType2Segment :: Integer
-                         -> [IntLabel] 
+                         -> [IntLabel]
                          -> Maybe Label
                          -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType2Segment bitsInWord intLabelList defOpt
-  = go intLabelList 0 0 intLabelList M.empty
+  = go restIntLabelList 1 0 firstN startingMap
   where
+    (m, saturationLimit)
+      = Maybe.maybe (M.empty, 2) (\defLabel -> (M.singleton defLabel Nothing, 1)) defOpt
+
+    (p@(firstN, firstLabel), restIntLabelList) = (L.head intLabelList, L.tail intLabelList)
+    startingMap | Just firstLabel == defOpt = m
+                | otherwise = M.insert firstLabel (Just (firstN, False, [p])) m
+
     go :: [IntLabel]
           -> Int
           -> Int
-          -> [IntLabel]
-          -> M.Map Label (Integer, Bool, [IntLabel])
+          -> Integer
+          -> M.Map Label (Maybe (Integer, Bool, [IntLabel]))
           -> Maybe (SegmentType, [IntLabel])
-    go [] segSize _ listAtLastAdded m = (, listAtLastAdded) <$> mkSegment segSize m
-    go (p@(n, lab) : rest) !segSize !saturatedCount listAtLastAdded m
+    go [] segSize _ prevN m
+      = (, []) <$> mkSegmentIfPossible segSize prevN m
+
+    go xs@(p@(n, lab) : rest) !segSize !saturatedCount !prevN m
       = case M.lookup lab m of
           Nothing ->
             if M.size m < 2
-            then go rest (segSize + 1) saturatedCount rest (M.insert lab (n, False, [p]) m)
-            else (, listAtLastAdded) <$> mkSegment segSize m
+            then go rest
+                    (segSize + 1)
+                    saturatedCount
+                    n
+                    (M.insert lab (Just (n, False, [p])) m)
+            else
+              (, xs) <$> mkSegmentIfPossible segSize prevN m
 
-          Just (startNum, saturated, intLabs)
+          Just Nothing ->  -- We found it and it was the same as the default label
+            go rest (segSize + 1) saturatedCount n m
+
+          Just (Just (startNum, saturated, intLabs))
             -> if | saturated
-                    -> go rest segSize saturatedCount listAtLastAdded m
-                  | n - startNum + 1 <= bitsInWord
-                    -> go rest (segSize + 1) saturatedCount rest (M.insert lab (startNum, False, p : intLabs) m)
-                  | saturatedCount == 1
-                    ->  -- Now it would become 2 so we can't continue.  We must try to make a segment and return.
-                    (, listAtLastAdded) <$> mkSegment segSize m
-                  | otherwise -- This one is saturated, so we could't add (n, lab). We must continue though because we know the other segment is not saturated.
-                    -> go rest (segSize + 1) (saturatedCount + 1) listAtLastAdded (M.insert lab (startNum, True, intLabs) m)
+                    -> go rest (segSize + 1) saturatedCount n m
+                  | U.rangeSpan startNum n <= bitsInWord
+                    -> go rest
+                          (segSize + 1)
+                          saturatedCount
+                          n
+                          (M.insert lab (Just (startNum, False, p : intLabs)) m)
+                  | saturatedCount + 1 == saturationLimit
+                    -> -- We now have a new saturated segment.  Check to see if we can continue.
+                       -- If not let's try to make a segment and return it.
+                       (, xs) <$> mkSegmentIfPossible segSize prevN m
+                  | otherwise -- This one now becomes saturated (we could't add (n, lab)).
+                              -- We must continue though because we know the other segment
+                              -- is not saturated.
+                    -> go rest
+                          (segSize + 1)
+                          (saturatedCount + 1)
+                          n
+                          (M.insert lab (Just (startNum, True, intLabs)) m)
 
-    mkSegment :: Int -> M.Map Label (Integer, Bool, [IntLabel]) -> Maybe SegmentType
-    mkSegment segSize m
-      = case M.toList m of
-          [(lab, (startN, saturated, intLabels))]
-            | saturated -> Nothing
-            | segSize < minBitTestSize -> Nothing
-            | Maybe.isNothing defOpt || Maybe.fromJust defOpt /= lab
-              -> let
-                   segSize' = segSize
-                   segLb' = startN
-                   segUb' = head intLabels
-                   casesForTest' = L.reverse intLabels
-                   casesForTestSize' = length intLabels
-                   otherLabel' = Maybe.fromJust defOpt
-                 in
-                   {-
-                   TwoLabelsType2 {
-                     segSize = segSize'
-                   , segLb = segLb'
-                   , segUb = segUb'
-                   , casesForTest = casesForTest'
-                   , lbForTest = undefined
-                   , ubForTest = undefined
-                   , casesForTestSize = undefined
-                   , otherLabel = Maybe.fromJust defOpt
-                   }
-                   -}
-                   undefined
-          [(lab1, (startN1, saturated1, intLabels1)),
-           (lab2, (startN2, saturated2, intLabels2))]
-            -> undefined
+    mkSegmentIfPossible :: Int
+                           -> Integer
+                           -> M.Map Label (Maybe (Integer, Bool, [IntLabel]))
+                           -> Maybe SegmentType
+    mkSegmentIfPossible segSize lastN m
+      | segSize < minBitTestSize = Nothing
+      | otherwise = Just $
+          case M.toList m of
+            -- Here label is default
+            [(lab, Nothing)]
+              -> GotoLabel {
+                  label = lab,
+                  segLb = fst . head $ intLabelList,
+                  segUb = fst . L.last $ intLabelList }
 
-          _ -> U.impossible ()
+            -- There is no default in the segment and we only found one label -- so just go to it.
+            [(lab, Just (startNum, _, intLabels))]
+              -> GotoLabel {
+                   label = lab,
+                   segLb = startNum,
+                   segUb = fst . head $ intLabels }
+
+            [(lab1, Nothing),
+             (lab2, Just x2@(_, saturated2, _))]
+               | saturated2 -> U.impossible ()
+               | otherwise -> makeSegment segSize lastN lab2 lab1 x2
+
+            [(lab1, Just x1@(_, saturated1, _)),
+             (lab2, Nothing)]
+               | saturated1 -> U.impossible ()
+               | otherwise -> makeSegment segSize lastN lab1 lab2 x1
+
+            [(lab1, Just x1@(startN1, saturated1, intLabels1)),
+             (lab2, Just x2@(startN2, saturated2, intLabels2))]
+               | saturated1 && saturated2 -> U.impossible ()
+               | saturated1 -> makeSegment segSize lastN lab2 lab1 x2
+               | saturated2 -> makeSegment segSize lastN lab1 lab2 x1
+               | otherwise  ->
+                 let
+                   d1 = (fst . head $ intLabels1) - startN1
+                   d2 = (fst . head $ intLabels2) - startN2
+                in
+                  if d1 < d2
+                  then makeSegment segSize lastN lab1 lab2 x1
+                  else makeSegment segSize lastN lab2 lab1 x2
+
+            _ -> U.impossible ()
+
+    makeSegment :: Int -> Integer -> Label -> Label -> (Integer, Bool, [IntLabel]) -> SegmentType
+    makeSegment segSize lastN thisLabel otherLabel (startN, _, intLabels)
+      = let
+          segSize' = segSize
+          segLb' = firstN
+          segUb' = lastN
+          labelForCases' = thisLabel
+          (casesForTestSize', casesForTest') = U.revAndLen intLabels
+          lbForTest' = startN
+          ubForTest' = fst . head $ intLabels
+          otherLabel' = otherLabel
+        in
+          TwoLabelsType2 {
+            segSize = segSize'
+          , segLb = segLb'
+          , segUb = segUb'
+          , labelForCases = labelForCases'
+          , casesForTest = casesForTest'
+          , casesForTestSize = casesForTestSize'
+          , lbForTest = lbForTest'
+          , ubForTest = ubForTest'
+          , otherLabel = otherLabel'
+        }
 
 data SegType2Status = InPlay | Saturated
 
@@ -1281,6 +1368,7 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           else (m, restIntLabel)
 
 -}
+{-
 lab1 = L 1
 
 lab2 = L 2
@@ -1291,6 +1379,7 @@ lab4 = L 4
 
 lab5 = L 5
 
+-}
 {-
 
 getGenericBitTestSegment :: SegmentConstructor -> LabelSizePredicate -> Integer ->
