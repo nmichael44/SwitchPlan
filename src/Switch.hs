@@ -961,54 +961,34 @@ getTwoLabelsType1Segment :: Integer
                          -> Maybe Label
                          -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType1Segment bitsInWord intLabelList defOpt
-  = go (tail intLabelList) labelSet 1 startNum casesForTestInitial casesForTestSizeInitial
+  = go (tail intLabelList) labelSet 1 startNum casesForTestSizeInitial casesForTestInitial
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
-    labelSet = S.insert startLabel (maybe S.empty S.singleton defOpt)
+    labelSet = S.insert startLabel (Maybe.maybe S.empty S.singleton defOpt)
 
     otherLabel = Maybe.fromMaybe startLabel defOpt
 
     (casesForTestInitial, casesForTestSizeInitial)
-      = if startLabel == otherLabel then ([], 0)
-                                    else ([startIntLabel], 1)
-
-    mkSegment :: Int
-                 -> Integer
-                 -> Int
-                 -> [IntLabel]
-                 -> SegmentType
-    mkSegment segSize segUb casesForTestSize casesForTest
-      = TwoLabelsType1 {
-          segSize = segSize
-        , segLb = startNum
-        , segUb = segUb
-        , labelForCases = snd . head $ casesForTest
-        , casesForTest = L.reverse casesForTest
-        , casesForTestSize = casesForTestSize
-        , otherLabel = otherLabel
-        }
+      | startLabel == otherLabel = ([], 0)
+      | otherwise = ([startIntLabel], 1)
 
     go :: [IntLabel]
           -> S.Set Label
           -> Int
           -> Integer
-          -> [IntLabel]
           -> Int
+          -> [IntLabel]
           -> Maybe (SegmentType, [IntLabel])
-    go [] _ segSize segUb casesForTest casesForTestSize
-      | segSize < minBitTestSize = Nothing
-      | otherwise = Just (mkSegment segSize segUb casesForTestSize casesForTest, [])
+    go [] _ segSize segUb casesForTestSize casesForTest
+      = produceSegment segSize segUb casesForTestSize casesForTest []
 
-    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest !casesForTestSize
+    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb !casesForTestSize casesForTest
       = let
           totalSpan = U.rangeSpan startNum n
           labSet' = S.insert lab labSet
         in
           if totalSpan > bitsInWord || S.size labSet' > 2
-          then
-            if segSize < minBitTestSize
-            then Nothing
-            else Just (mkSegment segSize segUb casesForTestSize casesForTest, xs)
+          then produceSegment segSize segUb casesForTestSize casesForTest xs
           else
             let
               segSize' = segSize + 1
@@ -1021,8 +1001,25 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
                  labSet'
                  segSize'
                  segUb'
-                 casesForTest'
                  casesForTestSize'
+                 casesForTest'
+
+    produceSegment :: Int -> Integer -> Int -> [IntLabel] -> [IntLabel] -> Maybe (SegmentType, [IntLabel])
+    produceSegment segSize segUb casesForTestSize casesForTest rest
+      | segSize < minBitTestSize = Nothing
+      | otherwise = Just (mkSegment segSize segUb casesForTestSize casesForTest, rest)
+
+    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> SegmentType
+    mkSegment segSize segUb casesForTestSize casesForTest
+      = TwoLabelsType1 {
+          segSize = segSize
+        , segLb = startNum
+        , segUb = segUb
+        , labelForCases = snd . head $ casesForTest
+        , casesForTest = L.reverse casesForTest
+        , casesForTestSize = casesForTestSize
+        , otherLabel = otherLabel
+        }
 
 getTwoLabelsType2Segment :: Integer
                          -> [IntLabel]
@@ -1063,26 +1060,26 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
             go rest (segSize + 1) saturatedCount n m
 
           Just (Just (startNum, saturated, intLabs))
-            -> if | saturated
-                    -> go rest (segSize + 1) saturatedCount n m
-                  | U.rangeSpan startNum n <= bitsInWord
-                    -> go rest
-                          (segSize + 1)
-                          saturatedCount
-                          n
-                          (M.insert lab (Just (startNum, False, p : intLabs)) m)
-                  | saturatedCount + 1 == saturationLimit
-                    -> -- We now have a new saturated segment.  Check to see if we can continue.
-                       -- If not let's try to make a segment and return it.
-                       (, xs) <$> mkSegmentIfPossible segSize prevN m
-                  | otherwise -- This one now becomes saturated (we could't add (n, lab)).
-                              -- We must continue though because we know the other segment
-                              -- is not saturated.
-                    -> go rest
-                          (segSize + 1)
-                          (saturatedCount + 1)
-                          n
-                          (M.insert lab (Just (startNum, True, intLabs)) m)
+            | saturated
+              -> go rest (segSize + 1) saturatedCount n m
+            | U.rangeSpan startNum n <= bitsInWord
+              -> go rest
+                    (segSize + 1)
+                    saturatedCount
+                    n
+                    (M.insert lab (Just (startNum, False, p : intLabs)) m)
+            | saturatedCount + 1 == saturationLimit
+              -> -- We now have a new saturated segment.  Check to see if we can continue.
+                  -- If not let's try to make a segment and return it.
+                  (, xs) <$> mkSegmentIfPossible segSize prevN m
+            | otherwise -- This one now becomes saturated (we could't add (n, lab)).
+                        -- We must continue though because we know the other segment
+                        -- is not saturated.
+              -> go rest
+                    (segSize + 1)
+                    (saturatedCount + 1)
+                    n
+                    (M.insert lab (Just (startNum, True, intLabs)) m)
 
     mkSegmentIfPossible :: Int
                            -> Integer
