@@ -1131,7 +1131,7 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
                    sp1 = U.rangeSpan startN1 (fst . head $ intLabels1)
                    sp2 = U.rangeSpan startN2 (fst . head $ intLabels2)
                 in
-                  if sp1 < sp2 -- Pick the one with the smallest span (we can sometimes compile that more efficiently).
+                  if sp1 < sp2 -- Pick the one with the smallest span (for span = 1 or 2 we can compile it more efficiently efficiently).
                   then makeSegment segSize lastN lab1 lab2 x1
                   else makeSegment segSize lastN lab2 lab1 x2
 
