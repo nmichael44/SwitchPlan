@@ -779,7 +779,6 @@ data SegmentType
     , segUb :: Integer
     , labelForCases :: Label
     , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
-    , casesForTestSize :: Int
     , otherLabel :: Label
     }
   | TwoLabelsType2 {
@@ -962,70 +961,83 @@ getTwoLabelsType1Segment :: Integer
                          -> Maybe Label
                          -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType1Segment bitsInWord intLabelList defOpt
-  = go (tail intLabelList) labelSet 1 startNum casesForTestSizeInitial casesForTestInitial
+  = go (tail intLabelList) labelSet 1 startNum [startIntLabel]
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (Maybe.maybe S.empty S.singleton defOpt)
-
-    (casesForTestInitial, casesForTestSizeInitial)
-      | Just startLabel == defOpt = ([], 0)
-      | otherwise = ([startIntLabel], 1)
 
     go :: [IntLabel]
           -> S.Set Label
           -> Int
           -> Integer
-          -> Int
           -> [IntLabel]
           -> Maybe (SegmentType, [IntLabel])
-    go [] _ segSize segUb casesForTestSize casesForTest
-      = createSegment segSize segUb casesForTestSize casesForTest []
+    go [] _ segSize segUb allCases
+      = createSegment segSize segUb allCases []
 
-    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb !casesForTestSize casesForTest
+    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest
       = let
           totalSpan = U.rangeSpan startNum n
           labSet' = S.insert lab labSet
         in
           if totalSpan > bitsInWord || S.size labSet' > 2
-          then createSegment segSize segUb casesForTestSize casesForTest xs
+          then createSegment segSize segUb casesForTest xs
           else
             let
               segSize' = segSize + 1
               segUb' = n
-              (casesForTest', casesForTestSize')
-                | Just lab == defOpt = (casesForTest, casesForTestSize)
-                | otherwise = (p : casesForTest, casesForTestSize + 1)
+              casesForTest' = p : casesForTest
             in
               go restIntLabel
                  labSet'
                  segSize'
                  segUb'
-                 casesForTestSize'
                  casesForTest'
 
-    createSegment :: Int -> Integer -> Int -> [IntLabel] -> [IntLabel] -> Maybe (SegmentType, [IntLabel])
-    createSegment segSize segUb casesForTestSize casesForTest rest
-      | segSize < minBitTestSize = Nothing
-      | otherwise = Just $
-        case casesForTest of
-          [] -- The only way this can happen is if we have a default label (defLabel) and all cases are of the form (n_i, defLabel).  So just go to the default label.
-            -> (GotoLabel {label = Maybe.fromJust defOpt, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }, rest)
-          ((_, lab) : _)
-            -> case defOpt of
-                 Nothing  -- We don't have a default and all cases goto the same label.
-                   -> (GotoLabel {label = lab, segLb = fst . L.last $ casesForTest, segUb = fst . L.head $ casesForTest }, rest)
-                 Just defLabel
-                   -> (mkSegment segSize segUb casesForTestSize casesForTest defLabel, rest)
+    pickLabelWithGreatestFrequency :: [IntLabel] -> Label
+    pickLabelWithGreatestFrequency intLabels
+      = let
+          m :: M.Map Label Int
+          m = L.foldr (\(_, lab) acc -> M.insertWith (+) lab 1 acc) M.empty intLabels
+        in
+          case M.toList m of
+            [(lab, _)] -> lab
+            [(lab1, cnt1), (lab2, cnt2)] | cnt1 >= cnt2 -> lab1
+                                         | otherwise -> lab2
+            _ -> U.impossible ()
 
-    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> Label -> SegmentType
-    mkSegment segSize segUb casesForTestSize casesForTest otherLabel
+    createSegment :: Int
+                     -> Integer
+                     -> [IntLabel]
+                     -> [IntLabel]
+                     -> Maybe (SegmentType, [IntLabel])
+    createSegment segSize segUb allCases rest
+      | segSize < minBitTestSize = Nothing
+      | otherwise =
+        let
+          (casesForTest, otherLabel) =
+            let
+              otlb = case defOpt of
+                       Nothing -> pickLabelWithGreatestFrequency allCases
+                       Just defLabel -> defLabel
+            in
+              (L.filter ((/= otlb) . snd) allCases, otlb)
+        in
+          Just
+            (case casesForTest of
+               [] -- The only way this can happen is when everything goes to the same label (including the default if there is one).
+                 -> GotoLabel { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
+               _ -> mkSegment segSize segUb casesForTest otherLabel
+            , rest)
+
+    mkSegment :: Int -> Integer -> [IntLabel] -> Label -> SegmentType
+    mkSegment segSize segUb casesForTest otherLabel
       = TwoLabelsType1 {
           segSize = segSize
         , segLb = startNum
         , segUb = segUb
         , labelForCases = snd . head $ casesForTest
         , casesForTest = L.reverse casesForTest
-        , casesForTestSize = casesForTestSize
         , otherLabel = otherLabel
         }
 
