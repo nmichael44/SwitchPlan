@@ -972,7 +972,11 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
       = if startLabel == otherLabel then ([], 0)
                                     else ([startIntLabel], 1)
 
-    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> SegmentType
+    mkSegment :: Int
+                 -> Integer
+                 -> Int
+                 -> [IntLabel]
+                 -> SegmentType
     mkSegment segSize segUb casesForTestSize casesForTest
       = TwoLabelsType1 {
           segSize = segSize
@@ -984,12 +988,16 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
         , otherLabel = otherLabel
         }
 
-    go :: [IntLabel] -> S.Set Label -> Int -> Integer -> [IntLabel] -> Int
+    go :: [IntLabel]
+          -> S.Set Label
+          -> Int
+          -> Integer
+          -> [IntLabel]
+          -> Int
           -> Maybe (SegmentType, [IntLabel])
     go [] _ segSize segUb casesForTest casesForTestSize
-      = if segSize < minBitTestSize
-        then Nothing
-        else Just (mkSegment segSize segUb casesForTestSize casesForTest, [])
+      | segSize < minBitTestSize = Nothing
+      | otherwise = Just (mkSegment segSize segUb casesForTestSize casesForTest, [])
 
     go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest !casesForTestSize
       = let
@@ -1006,7 +1014,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
               segSize' = segSize + 1
               segUb' = n
               (casesForTest', casesForTestSize')
-                | lab == otherLabel  = (casesForTest, casesForTestSize)
+                | lab == otherLabel = (casesForTest, casesForTestSize)
                 | otherwise = (p : casesForTest, casesForTestSize + 1)
             in
               go restIntLabel
