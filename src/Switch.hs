@@ -930,17 +930,18 @@ getContiguousRegions intLabelList defOpt
       = (totalSegSize, numberOfSegments, L.reverse res, [])
 
     splitIntoContSegments xs !totalSegSize numberOfSegments res
-      = if numberOfSegments >= maxNumberOfLabelContiguousRegions
-        then (totalSegSize, numberOfSegments, L.reverse res, xs)
-        else let
-               (label, piece, intLabs) = getLabelCases xs
-               currSegSize = L.length piece
-             in
-               splitIntoContSegments
-                 intLabs
-                 (totalSegSize + currSegSize)
-                 (numberOfSegments + 1)
-                 ((label, piece) : res)
+      | numberOfSegments >= maxNumberOfLabelContiguousRegions
+        = (totalSegSize, numberOfSegments, L.reverse res, xs)
+      | otherwise
+        = let
+            (label, piece, intLabs) = getLabelCases xs
+            currSegSize = L.length piece
+          in
+            splitIntoContSegments
+              intLabs
+              (totalSegSize + currSegSize)
+              (numberOfSegments + 1)
+              ((label, piece) : res)
 
     getLabelCases :: [IntLabel] -> (Label, [IntLabel], [IntLabel])
     getLabelCases intLabs
