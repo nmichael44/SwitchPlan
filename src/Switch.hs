@@ -670,7 +670,7 @@ this is compiled into:
 
   Also see note (***) above which is also appicable here.
 
-  We don't currently implement this one.
+  We don't currently implement this one (because it's probably not worth it -- see below).
 
 Three/Four Labels:
 ==================
@@ -730,8 +730,9 @@ Assuming n1 <= exp <= nk, this is compiled into:
       goto L3;
 
   Notes: The 3 label case overlaps the (Three Label) compilation scheme above.  They do have different constraints though
-  (this scheme uses 2 bits per label) so there may be cases when this one is not applicable but the other one is.
-  When they are both applicable I believe this one is faster.
+  (this scheme uses 2 bits per label) so there are cases when this one is not applicable but the other one is.
+  When they are both applicable I believe this one is faster.  We only implement this one.  I dp not believe it is worth
+  the trouble of doing both.
 -}
 
 data ContiguousSegment
@@ -966,10 +967,8 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (Maybe.maybe S.empty S.singleton defOpt)
 
-    otherLabel = Maybe.fromMaybe startLabel defOpt
-
     (casesForTestInitial, casesForTestSizeInitial)
-      | startLabel == otherLabel = ([], 0)
+      | Just startLabel == defOpt = ([], 0)
       | otherwise = ([startIntLabel], 1)
 
     go :: [IntLabel]
@@ -980,7 +979,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           -> [IntLabel]
           -> Maybe (SegmentType, [IntLabel])
     go [] _ segSize segUb casesForTestSize casesForTest
-      = produceSegment segSize segUb casesForTestSize casesForTest []
+      = createSegment segSize segUb casesForTestSize casesForTest []
 
     go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb !casesForTestSize casesForTest
       = let
@@ -988,13 +987,13 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           labSet' = S.insert lab labSet
         in
           if totalSpan > bitsInWord || S.size labSet' > 2
-          then produceSegment segSize segUb casesForTestSize casesForTest xs
+          then createSegment segSize segUb casesForTestSize casesForTest xs
           else
             let
               segSize' = segSize + 1
               segUb' = n
               (casesForTest', casesForTestSize')
-                | lab == otherLabel = (casesForTest, casesForTestSize)
+                | Just lab == defOpt = (casesForTest, casesForTestSize)
                 | otherwise = (p : casesForTest, casesForTestSize + 1)
             in
               go restIntLabel
@@ -1004,13 +1003,22 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
                  casesForTestSize'
                  casesForTest'
 
-    produceSegment :: Int -> Integer -> Int -> [IntLabel] -> [IntLabel] -> Maybe (SegmentType, [IntLabel])
-    produceSegment segSize segUb casesForTestSize casesForTest rest
+    createSegment :: Int -> Integer -> Int -> [IntLabel] -> [IntLabel] -> Maybe (SegmentType, [IntLabel])
+    createSegment segSize segUb casesForTestSize casesForTest rest
       | segSize < minBitTestSize = Nothing
-      | otherwise = Just (mkSegment segSize segUb casesForTestSize casesForTest, rest)
+      | otherwise = Just $
+        case casesForTest of
+          [] -- The only way this can happen is if we have a default label (defLabel) and all cases are of the form (n_i, defLabel).  So just go to the default label.
+            -> (GotoLabel {label = Maybe.fromJust defOpt, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }, rest)
+          ((_, lab) : _)
+            -> case defOpt of
+                 Nothing  -- We don't have a default and all cases goto the same label.
+                   -> (GotoLabel {label = lab, segLb = fst . L.last $ casesForTest, segUb = fst . L.head $ casesForTest }, rest)
+                 Just defLabel
+                   -> (mkSegment segSize segUb casesForTestSize casesForTest defLabel, rest)
 
-    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> SegmentType
-    mkSegment segSize segUb casesForTestSize casesForTest
+    mkSegment :: Int -> Integer -> Int -> [IntLabel] -> Label -> SegmentType
+    mkSegment segSize segUb casesForTestSize casesForTest otherLabel
       = TwoLabelsType1 {
           segSize = segSize
         , segLb = startNum
@@ -1056,7 +1064,7 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
             else
               (, xs) <$> mkSegmentIfPossible segSize prevN m
 
-          Just Nothing ->  -- We found it and it was the same as the default label
+          Just Nothing ->  -- We found it but it was the same as the default label.
             go rest (segSize + 1) saturatedCount n m
 
           Just (Just (startNum, saturated, intLabs))
@@ -1070,8 +1078,8 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
                     (M.insert lab (Just (startNum, False, p : intLabs)) m)
             | saturatedCount + 1 == saturationLimit
               -> -- We now have a new saturated segment.  Check to see if we can continue.
-                  -- If not let's try to make a segment and return it.
-                  (, xs) <$> mkSegmentIfPossible segSize prevN m
+                 -- If not let's try to make a segment and return it.
+                 (, xs) <$> mkSegmentIfPossible segSize prevN m
             | otherwise -- This one now becomes saturated (we could't add (n, lab)).
                         -- We must continue though because we know the other segment
                         -- is not saturated.
@@ -1120,10 +1128,10 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
                | saturated2 -> makeSegment segSize lastN lab1 lab2 x1
                | otherwise  ->
                  let
-                   d1 = (fst . head $ intLabels1) - startN1
-                   d2 = (fst . head $ intLabels2) - startN2
+                   sp1 = U.rangeSpan startN1 (fst . head $ intLabels1)
+                   sp2 = U.rangeSpan startN2 (fst . head $ intLabels2)
                 in
-                  if d1 < d2
+                  if sp1 < sp2 -- Pick the one with the smallest span (we can sometimes compile that more efficiently).
                   then makeSegment segSize lastN lab1 lab2 x1
                   else makeSegment segSize lastN lab2 lab1 x2
 
