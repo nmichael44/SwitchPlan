@@ -760,7 +760,7 @@ data SegmentType
     , casesAreDense :: Bool
     , cases :: [IntLabel]
     }
-  |  GotoLabel {
+  |  SimpleRegion {
       label :: Label
     , segLb :: Integer
     , segUb :: Integer
@@ -892,7 +892,7 @@ getContiguousRegions intLabelList defOpt
           , cSegLb = segLb
           , cSegUb = segUb
           , cIsDefault = isDefault}] | isDefault
-            -> GotoLabel {label = label, segLb = segLb, segUb = segUb}
+            -> SimpleRegion {label = label, segLb = segLb, segUb = segUb}
           _ ->
             ContiguousRegions {
               segSize = totalSegSize
@@ -1027,7 +1027,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           Just
             (case casesForTest of
                [] -- The only way this can happen is when everything goes to the same label (including the default if there is one).
-                 -> GotoLabel { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
+                 -> SimpleRegion { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
                _ -> mkSegment segSize segUb casesForTest otherLabel
             , rest)
 
@@ -1112,14 +1112,14 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           case M.toList m of
             -- Here label is default
             [(lab, Nothing)]
-              -> GotoLabel {
+              -> SimpleRegion {
                   label = lab,
                   segLb = fst . head $ intLabelList,
                   segUb = fst . L.last $ intLabelList }
 
             -- There is no default in the segment and we only found one label -- so just go to it.
             [(lab, Just (startNum, _, intLabels))]
-              -> GotoLabel {
+              -> SimpleRegion {
                    label = lab,
                    segLb = startNum,
                    segUb = fst . head $ intLabels }
@@ -1174,19 +1174,6 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           , otherLabel = otherLabel'
         }
 
-data SegType2Status = InPlay | Saturated
-
-data SegKindType2
-  = SegKindType2 { _segLabel :: Label
-                 , _segSize :: Int
-                 , _segLb :: Integer
-                 , _segUb :: Integer
-                 , _segIsDense :: Bool
-                 , _segIntLabel :: [IntLabel]
-                 , _segLabelIsAlone :: Bool
-                 , _segLabelIsDefault :: Bool
-                 , _segStatus :: SegType2Status
-                 }
 {-
 checkIfIntervalUsuable = undefined
 checkAndPickInterval2 = undefined
