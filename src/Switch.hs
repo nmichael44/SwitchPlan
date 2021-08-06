@@ -974,7 +974,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           -> [IntLabel]
           -> Maybe (SegmentType, [IntLabel])
     go [] _ segSize segUb allCases
-      = createSegment segSize segUb allCases []
+      = mkSegment segSize segUb allCases []
 
     go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest
       = let
@@ -982,7 +982,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           labSet' = S.insert lab labSet
         in
           if totalSpan > bitsInWord || S.size labSet' > 2
-          then createSegment segSize segUb casesForTest xs
+          then mkSegment segSize segUb casesForTest xs
           else
             let
               segSize' = segSize + 1
@@ -1007,12 +1007,12 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
                                          | otherwise -> lab2
             _ -> U.impossible ()
 
-    createSegment :: Int
+    mkSegment :: Int
                      -> Integer
                      -> [IntLabel]
                      -> [IntLabel]
                      -> Maybe (SegmentType, [IntLabel])
-    createSegment segSize segUb allCases rest
+    mkSegment segSize segUb allCases rest
       | segSize < minBitTestSize = Nothing
       | otherwise =
         let
@@ -1028,11 +1028,11 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
             (case casesForTest of
                [] -- The only way this can happen is when everything goes to the same label (including the default if there is one).
                  -> SimpleRegion { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
-               _ -> mkSegment segSize segUb casesForTest otherLabel
+               _ -> createSegment segSize segUb casesForTest otherLabel
             , rest)
 
-    mkSegment :: Int -> Integer -> [IntLabel] -> Label -> SegmentType
-    mkSegment segSize segUb casesForTest otherLabel
+    createSegment :: Int -> Integer -> [IntLabel] -> Label -> SegmentType
+    createSegment segSize segUb casesForTest otherLabel
       = TwoLabelsType1 {
           segSize = segSize
         , segLb = startNum
