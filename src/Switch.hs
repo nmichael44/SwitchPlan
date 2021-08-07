@@ -877,10 +877,10 @@ mergeConsecutiveIsolatedSegments
 maxNumberOfLabelContiguousRegions :: Int
 maxNumberOfLabelContiguousRegions = 3
 
-getContiguousRegions :: [IntLabel]
-                        -> Maybe Label
-                        -> Maybe (SegmentType, [IntLabel])
-getContiguousRegions intLabelList defOpt
+getContiguousSegment :: [IntLabel]
+                     -> Maybe Label
+                     -> Maybe (SegmentType, [IntLabel])
+getContiguousSegment intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
       contiguousSegments = L.map createSegment segments
@@ -966,7 +966,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (Maybe.maybe S.empty S.singleton defOpt)
-    
+
     go :: [IntLabel]
           -> S.Set Label
           -> Int
@@ -1281,62 +1281,64 @@ getMultiWayJumpSegment intLabelList defOpt =
       | n - previous >= maxJumpTableHole = (segSiz, previous, res, ls)
       | otherwise = go n restIntLabel (segSiz + 1) (p : res)
 
-{-
-findSegment :: Integer -> Maybe Label -> [IntLabel] -> SegInfo
+findSegment :: Integer -> Maybe Label -> [IntLabel] -> (SegmentType, [IntLabel])
 findSegment bitsInWord defOpt intLabelList =
-  {-
-        trace "" $
-        tr intLabelList $
-        trace "" $
-        tr bitTest1Opt $
-        trace "" $
-        tr bitTest2Opt $
-        trace "" $
-        tr bitTest3Opt $
-        trace "" $
-        tr muplyWayOpt $
-        trace "" $
-  -}
-  if  | Just res <- fullCoverage bitTest1 -> res -- If any one of the schemes gives full coverage then pick it
-      | Just res <- fullCoverage bitTest2 -> res -- with priority BitTest1, BitTest2, BitTest3, MultiWayJump
-      | Just res <- fullCoverage bitTest3 -> res
+
+  trace "" $
+  tr intLabelList $
+  trace "" $
+  tr contSeg $
+  trace "" $
+  tr btType1 $
+  trace "" $
+  tr btType2 $
+  trace "" $
+  tr btFourLabel $
+  trace "" $
+  tr multiWayJump $
+  trace "" $
+
+  if  | Just res <- fullCoverage contSeg -> res  -- If any one of the schemes gives full coverage then pick it
+      | Just res <- fullCoverage btType1 -> res -- with priority BitTest1, BitTest2, FourLabel, MultiWayJump
+      | Just res <- fullCoverage btType2 -> res
+      | Just res <- fullCoverage btFourLabel -> res
       | Just res <- fullCoverage multiWayJump -> res
-      | otherwise -> pickLargest bitTest1 bitTest2 bitTest3 multiWayJump defSeg
+      | otherwise -> pickLargest [contSeg, btType1, btType2, btFourLabel, multiWayJump]
 
   where
-    bitTest1 = getType1BitTestSegment bitsInWord intLabelList defOpt
-    bitTest2 = getType2BitTestSegment bitsInWord intLabelList defOpt
-    bitTest3 = getType3BitTestSegment bitsInWord intLabelList defOpt
-    multiWayJump = getMultiWayJumpSegment intLabelList
+    contSeg = getContiguousSegment intLabelList defOpt
+    btType1 = getTwoLabelsType1Segment bitsInWord intLabelList defOpt
+    btType2 = getTwoLabelsType2Segment bitsInWord intLabelList defOpt
+    btFourLabel = getFourLabelSegment bitsInWord intLabelList defOpt
+    multiWayJump = getMultiWayJumpSegment intLabelList defOpt
 
-    defSeg = ((1, IsolatedValuesSegment [head intLabelList]), tail intLabelList)
-
-    fullCoverage :: Maybe SegInfo -> Maybe SegInfo
+    fullCoverage :: Maybe (SegmentType, [IntLabel]) -> Maybe (SegmentType, [IntLabel])
     fullCoverage res@(Just (_, [])) = res
     fullCoverage _ = Nothing
 
-    maxSegment :: SegInfo -> SegInfo -> SegInfo
-    maxSegment res1@((size1, _), _) res2@((size2, _), _)
-      = if size1 >= size2 then res1 else res2
+    maxSegment :: (SegmentType, [a]) -> (SegmentType, [a]) -> (SegmentType, [a])
+    maxSegment seg0 seg1
+      | (segSize . fst $ seg0) >= (segSize .fst $ seg1) = seg0
+      | otherwise = seg1
 
-    pickLargest :: Maybe SegInfo -> Maybe SegInfo -> Maybe SegInfo -> Maybe SegInfo
-                   -> SegInfo -> SegInfo
-    pickLargest s1 s2 s3 s4 def
-      = maxSegment (maxSegment seg1 seg2) (maxSegment seg3 seg4)
+    pickLargest :: [Maybe (SegmentType, [IntLabel])] -> (SegmentType, [IntLabel])
+    pickLargest segments
+      = largestSegment
       where
-        seg1 = Maybe.fromMaybe def s1
-        seg2 = Maybe.fromMaybe def s2
-        seg3 = Maybe.fromMaybe def s3
-        seg4 = Maybe.fromMaybe def s4
+        validSegments = Maybe.catMaybes segments
+        largestSegment = L.foldr1 maxSegment validSegments
 
-splitIntoSegments :: Integer -> Maybe Label -> [IntLabel] -> [SegmentTypeWithSize]
+{-
+splitIntoSegments :: Integer -> Maybe Label -> [IntLabel] -> [SegmentType]
 splitIntoSegments bitsInWord defOpt = go
   where
-    go :: [IntLabel] -> [SegmentTypeWithSize]
+    go :: [IntLabel] -> [SegmentType]
     go [] = []
     go ls =
-      let (segmentWithSize, rest) = findSegment bitsInWord defOpt ls
-       in segmentWithSize : go rest
+      let
+        (segmentWithSize, rest) = findSegment bitsInWord defOpt ls
+      in
+        segmentWithSize : go rest
 
 findMiddleSegment :: Int -> [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
 findMiddleSegment totalSize =
