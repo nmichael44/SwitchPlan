@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Switch where
 
@@ -796,7 +797,8 @@ data SegmentType
       segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
-    , cases :: [IntLabel]
+    , fourLabelCases :: [[IntLabel]]
+    , fourLabelOtherLabel :: Maybe Label
     }
   | MultiWayJump {
       segSize :: Int
@@ -976,24 +978,27 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
     go [] _ segSize segUb allCases
       = mkSegment segSize segUb allCases []
 
-    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb casesForTest
+    go xs@(p@(n, lab) : restIntLabel) labSet !segSize segUb allCases
       = let
           totalSpan = U.rangeSpan startNum n
           labSet' = S.insert lab labSet
         in
-          if totalSpan > bitsInWord || S.size labSet' > 2
-          then mkSegment segSize segUb casesForTest xs
+          if S.size labSet' > 2
+            || totalSpan > bitsInWord -- Here we can potentially ignore n's that
+                                      -- go to the default label if there is one.
+                                      -- We leave it for future work.
+          then mkSegment segSize segUb allCases xs
           else
             let
               segSize' = segSize + 1
               segUb' = n
-              casesForTest' = p : casesForTest
+              allCases' = p : allCases
             in
               go restIntLabel
                  labSet'
                  segSize'
                  segUb'
-                 casesForTest'
+                 allCases'
 
     pickLabelWithGreatestFrequency :: [IntLabel] -> Label
     pickLabelWithGreatestFrequency intLabels
@@ -1008,28 +1013,28 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
             _ -> U.impossible ()
 
     mkSegment :: Int
-                     -> Integer
-                     -> [IntLabel]
-                     -> [IntLabel]
-                     -> Maybe (SegmentType, [IntLabel])
+              -> Integer
+              -> [IntLabel]
+              -> [IntLabel]
+              -> Maybe (SegmentType, [IntLabel])
     mkSegment segSize segUb allCases rest
       | segSize < minBitTestSize = Nothing
-      | otherwise =
-        let
-          (casesForTest, otherLabel) =
-            let
-              otlb = case defOpt of
-                       Nothing -> pickLabelWithGreatestFrequency allCases
-                       Just defLabel -> defLabel
-            in
-              (L.filter ((/= otlb) . snd) allCases, otlb)
-        in
-          Just
-            (case casesForTest of
-               [] -- The only way this can happen is when everything goes to the same label (including the default if there is one).
-                 -> SimpleRegion { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
-               _ -> createSegment segSize segUb casesForTest otherLabel
-            , rest)
+      | otherwise
+        = let
+            (casesForTest, otherLabel) =
+              let
+                otlb = case defOpt of
+                         Nothing -> pickLabelWithGreatestFrequency allCases
+                         Just defLabel -> defLabel
+              in
+                (L.filter ((/= otlb) . snd) allCases, otlb)
+          in
+            Just
+              (case casesForTest of
+                 [] -- The only way this can happen is when everything goes to the same label (including the default if there is one).
+                   -> SimpleRegion { label = otherLabel, segLb = fst . L.head $ intLabelList, segUb = fst . L.last $ intLabelList }
+                 _ -> createSegment segSize segUb casesForTest otherLabel
+              , rest)
 
     createSegment :: Int -> Integer -> [IntLabel] -> Label -> SegmentType
     createSegment segSize segUb casesForTest otherLabel
@@ -1173,6 +1178,71 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           , ubForTest = ubForTest'
           , otherLabel = otherLabel'
         }
+
+getFourLabelSegment :: Integer
+                    -> [IntLabel]
+                    -> Maybe Label
+                    -> Maybe (SegmentType, [IntLabel])
+getFourLabelSegment bitsInWord intLabelList defOpt
+  = go (tail intLabelList) 1 startNum initialMap
+  where
+    bitsAvailable = bitsInWord `div` 2
+    startIntLabel@(startNum, startLabel) = head intLabelList
+    initialMap = M.insert startLabel
+                          [startIntLabel]
+                          (Maybe.maybe M.empty (`M.singleton` []) defOpt)
+
+    mkSegment :: Int
+              -> Integer
+              -> M.Map Label [IntLabel]
+              -> [IntLabel]
+              -> Maybe (SegmentType, [IntLabel])
+    mkSegment segSize segUb m rest
+      | segSize < minBitTestSize = Nothing
+      | otherwise
+        = let
+            m' = Maybe.maybe m (`M.delete` m) defOpt
+            caseLists = L.map (L.reverse . snd) (L.filter (\(lab, _) -> Just lab /= defOpt) $ M.toList m')
+          in
+            Just
+              (FourLabels {
+                 segSize = segSize
+               , segLb = startNum
+               , segUb = segUb
+               , fourLabelCases = caseLists
+               , fourLabelOtherLabel = defOpt
+               },
+               rest)
+
+    addToMap :: IntLabel -> Maybe [IntLabel] -> Maybe [IntLabel]
+    addToMap p xs
+      = Just $ h xs
+      where h Nothing = [p]
+            h (Just ys) = p : ys
+
+    go :: [IntLabel]
+       -> Int
+       -> Integer
+       -> M.Map Label [IntLabel]
+       -> Maybe (SegmentType, [IntLabel])
+    go [] segSize segUb m = mkSegment segSize segUb m []
+
+    go xs@(p@(n, lab) : restIntLabel) !segSize segUb m
+      = let
+          totalSpan = U.rangeSpan startNum n
+          m' = M.alter (addToMap p) lab m
+        in
+          if M.size m' > 4
+            || totalSpan > bitsAvailable -- Here we can potentially ignore n's that
+                                         -- go to the default label if there is one.
+                                         -- We leave it for future work.
+          then mkSegment segSize segUb m xs
+          else
+            let
+              segSize' = segSize + 1
+              segUb' = n
+            in
+              go restIntLabel segSize' segUb' m'
 
 {-
 lab1 = L 1
