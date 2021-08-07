@@ -1202,7 +1202,7 @@ getFourLabelSegment bitsInWord intLabelList defOpt
       | otherwise
         = let
             m' = Maybe.maybe m (`M.delete` m) defOpt
-            caseLists = L.map (L.reverse . snd) (L.filter (\(lab, _) -> Just lab /= defOpt) $ M.toList m')
+            caseLists = L.map (L.reverse . snd) $ M.toList m'
           in
             Just
               (FourLabels {
