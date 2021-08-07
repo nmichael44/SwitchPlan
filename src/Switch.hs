@@ -968,7 +968,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
     labelSet = S.insert startLabel (Maybe.maybe S.empty S.singleton defOpt)
-
+    
     go :: [IntLabel]
           -> S.Set Label
           -> Int
@@ -984,9 +984,10 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           labSet' = S.insert lab labSet
         in
           if S.size labSet' > 2
-            || totalSpan > bitsInWord -- Here we can potentially ignore n's that
+            || totalSpan > bitsInWord -- Idea for later:
+                                      -- Here we can potentially ignore n's that
                                       -- go to the default label if there is one.
-                                      -- We leave it for future work.
+                                      -- We leave this optimization for future work.
           then mkSegment segSize segUb allCases xs
           else
             let
@@ -1179,6 +1180,12 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           , otherLabel = otherLabel'
         }
 
+-- Idea for later:
+-- In the presense of a default, if we have an interval with no gaps
+-- in the integers then we can do Four labels without one of them having
+-- to be equal to the default as this code requires.
+-- We leave this for future work.
+
 getFourLabelSegment :: Integer
                     -> [IntLabel]
                     -> Maybe Label
@@ -1233,9 +1240,10 @@ getFourLabelSegment bitsInWord intLabelList defOpt
           m' = M.alter (addToMap p) lab m
         in
           if M.size m' > 4
-            || totalSpan > bitsAvailable -- Here we can potentially ignore n's that
+            || totalSpan > bitsAvailable -- Idea for later:
+                                         -- Here we can potentially ignore n's that
                                          -- go to the default label if there is one.
-                                         -- We leave it for future work.
+                                         -- We leave this optimization it for future work.
           then mkSegment segSize segUb m xs
           else
             let
@@ -1244,18 +1252,6 @@ getFourLabelSegment bitsInWord intLabelList defOpt
             in
               go restIntLabel segSize' segUb' m'
 
-{-
-lab1 = L 1
-
-lab2 = L 2
-
-lab3 = L 3
-
-lab4 = L 4
-
-lab5 = L 5
-
--}
 {-
 
 getGenericBitTestSegment :: SegmentConstructor -> LabelSizePredicate -> Integer ->
