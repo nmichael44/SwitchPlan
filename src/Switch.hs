@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Switch where
 
@@ -1329,8 +1330,8 @@ findSegment bitsInWord defOpt intLabelList =
         validSegments = Maybe.catMaybes segments
         largestSegment = L.foldr1 maxSegment validSegments
 
-splitIntoSegments :: Integer -> Maybe Label -> [IntLabel] -> [SegmentType]
-splitIntoSegments bitsInWord defOpt intLabelList
+splitIntoSegments :: [IntLabel] -> Integer -> Maybe Label -> [SegmentType]
+splitIntoSegments intLabelList bitsInWord defOpt
   = go intLabelList
   where
     go :: [IntLabel] -> [SegmentType]
@@ -1346,24 +1347,64 @@ printSeg seg
   = putStrLn ("\n" ++ show seg)
 
 printSegs :: [SegmentType] -> IO ()
-printSegs segs
-  = mapM_ printSeg segs
+printSegs segs = F.forM_ segs printSeg
 
-{-
-findMiddleSegment :: Int -> [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
-findMiddleSegment totalSize =
-  go 0 []
+
+class SegmentLike t where
+  getSize :: t -> Int
+  getLb :: t -> Integer
+  getUb :: t -> Integer
+  getName :: t -> String
+
+findMiddleSegment :: forall t. SegmentLike t
+                  => [t]
+                  -> Int
+                  -> ([t], Int, [t], Int)
+findMiddleSegment segments totalSize
+  = (L.reverse leftSegmentRev, leftSegmentSize, rightSegment, rightSegmentSize)
   where
     halfSize = totalSize `div` 2
 
-    go :: Int -> [SegmentTypeWithSize] -> [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
-    go n pre (seg@(segSiz, _) : rest) =
-      if newTotalSize >= halfSize
-        then (pre, seg, rest)
-        else go newTotalSize (seg : pre) rest
+    (leftSegmentRev, leftSegmentSize, rightSegment, rightSegmentSize)
+      = go 0 [] segments
+
+    go :: Int
+          -> [t]
+          -> [t]
+          -> ([t], Int, [t], Int)
+    go accSize pre q@(seg : rest)
+      | newTotalSize >= halfSize = (pre, accSize, q, totalSize - accSize)
+      | otherwise = go newTotalSize (seg : pre) rest
       where
-        newTotalSize = n + segSiz
+        segSize' = getSize seg
+        newTotalSize = accSize + segSize'
+
     go _ _ [] = U.impossible ()
+
+createPlan' :: forall t. SegmentLike t => [t] -> Bool -> Maybe Label -> Integer -> Integer -> SwitchPlan
+createPlan' allSegments signed defOpt regionLb regionUb
+  = go allSegments globalTotalSize regionLb regionUb
+  where
+    globalTotalSize = L.foldl' (+) 0 $ L.map getSize allSegments
+
+    go :: [t] -> Int -> Integer -> Integer -> SwitchPlan
+    go [seg] _ lb ub = compileSegment seg lb ub defOpt
+    go segments !totalSize !lb !ub
+      = let
+          (segmentsLeft, segmentLeftSize, segmentsRight, segmentRightSize)
+            = findMiddleSegment segments totalSize
+
+          segment = head segmentsRight
+          segmentLb = getLb segment
+
+          planLeft = go segmentsLeft segmentLeftSize lb (segmentLb - 1)
+          planRight = go segmentsRight segmentRightSize segmentLb ub
+        in
+          IfLT signed segmentLb planLeft planRight
+
+    compileSegment :: SegmentLike t => t -> Integer -> Integer -> Maybe Label -> SwitchPlan
+    compileSegment segment lb ub defOpt
+      = undefined
 
 {-
 
@@ -1520,5 +1561,4 @@ reassocTuples initial [] last =
 reassocTuples initial ((a, b) : tuples) last =
   (initial, a) : reassocTuples b tuples last
 
--}
 -}
