@@ -746,12 +746,13 @@ data ContiguousSegment
   deriving Eq
 
 instance Show ContiguousSegment where
-  show ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases }
-    = "\nContiguousSegment {\n"
-      ++ "  SegLabel: " ++ show cSegLabel ++ "\n"
-      ++ "  SegLb: " ++ show cSegLb ++ "\n"
-      ++ "  SegUb: " ++ show cSegUb ++ "\n"
-      ++ "  SegCases: " ++ show cSegCases ++ "\n}\n"
+  show ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases, cIsDefault }
+    = "CSeg ["
+      ++ "Label: " ++ show cSegLabel
+      ++ ", Lb: " ++ show cSegLb
+      ++ ", Ub: " ++ show cSegUb
+      ++ ", IsDefault: " ++ show cIsDefault
+      ++ ", Cases: " ++ show cSegCases ++ "]"
 
 data SegmentType
   = IsolatedValues {
@@ -891,7 +892,7 @@ getContiguousSegment intLabelList defOpt
             cSegLabel = label
           , cSegLb = segLb
           , cSegUb = segUb
-          , cIsDefault = isDefault}] | isDefault
+          , cIsDefault = isDefault}] | isDefault || Maybe.isNothing defOpt
             -> SimpleRegion {label = label, segLb = segLb, segUb = segUb}
           _ ->
             ContiguousRegions {
@@ -1053,12 +1054,12 @@ getTwoLabelsType2Segment :: Integer
 getTwoLabelsType2Segment bitsInWord intLabelList defOpt
   = go restIntLabelList 1 0 firstN startingMap
   where
-    (m, saturationLimit)
+    (m0, saturationLimit)
       = Maybe.maybe (M.empty, 2) (\defLabel -> (M.singleton defLabel Nothing, 1)) defOpt
 
-    (p@(firstN, firstLabel), restIntLabelList) = (L.head intLabelList, L.tail intLabelList)
-    startingMap | Just firstLabel == defOpt = m
-                | otherwise = M.insert firstLabel (Just (firstN, False, [p])) m
+    (q@(firstN, firstLabel), restIntLabelList) = (L.head intLabelList, L.tail intLabelList)
+    startingMap | Just firstLabel == defOpt = m0
+                | otherwise = M.insert firstLabel (Just (firstN, False, [q])) m0
 
     go :: [IntLabel]
           -> Int
@@ -1283,7 +1284,7 @@ getMultiWayJumpSegment intLabelList defOpt =
 
 findSegment :: Integer -> Maybe Label -> [IntLabel] -> (SegmentType, [IntLabel])
 findSegment bitsInWord defOpt intLabelList =
-
+{-
   trace "" $
   tr intLabelList $
   trace "" $
@@ -1297,7 +1298,7 @@ findSegment bitsInWord defOpt intLabelList =
   trace "" $
   tr multiWayJump $
   trace "" $
-
+-}
   if  | Just res <- fullCoverage contSeg -> res  -- If any one of the schemes gives full coverage then pick it
       | Just res <- fullCoverage btType1 -> res -- with priority BitTest1, BitTest2, FourLabel, MultiWayJump
       | Just res <- fullCoverage btType2 -> res
@@ -1318,7 +1319,7 @@ findSegment bitsInWord defOpt intLabelList =
 
     maxSegment :: (SegmentType, [a]) -> (SegmentType, [a]) -> (SegmentType, [a])
     maxSegment seg0 seg1
-      | (segSize . fst $ seg0) >= (segSize .fst $ seg1) = seg0
+      | (segSize . fst $ seg0) >= (segSize . fst $ seg1) = seg0
       | otherwise = seg1
 
     pickLargest :: [Maybe (SegmentType, [IntLabel])] -> (SegmentType, [IntLabel])
@@ -1328,9 +1329,9 @@ findSegment bitsInWord defOpt intLabelList =
         validSegments = Maybe.catMaybes segments
         largestSegment = L.foldr1 maxSegment validSegments
 
-{-
 splitIntoSegments :: Integer -> Maybe Label -> [IntLabel] -> [SegmentType]
-splitIntoSegments bitsInWord defOpt = go
+splitIntoSegments bitsInWord defOpt intLabelList
+  = go intLabelList
   where
     go :: [IntLabel] -> [SegmentType]
     go [] = []
@@ -1340,6 +1341,15 @@ splitIntoSegments bitsInWord defOpt = go
       in
         segmentWithSize : go rest
 
+printSeg :: SegmentType -> IO ()
+printSeg seg
+  = putStrLn ("\n" ++ show seg)
+
+printSegs :: [SegmentType] -> IO ()
+printSegs segs
+  = mapM_ printSeg segs
+
+{-
 findMiddleSegment :: Int -> [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
 findMiddleSegment totalSize =
   go 0 []
