@@ -525,8 +525,8 @@ Let span = nk - n1 + 1.
 
 Let exp be the input expression of the switch.
 
-Three Labels Contiguous regions:
-================================
+Two or Three Labels Contiguous regions:
+=======================================
 These are case expressions of the form:
 
 ni -> L1
@@ -548,7 +548,8 @@ nm + 2 -> L3
 nm + kk -> L3
 _       -> L4
 
-with or without default.  The default label is allowed to be any of the existing labels.
+with or without default.  The default label is allowed to be any
+of the existing labels.
 The third region is allowed to not be there.
 
 Assuming n1 <= exp <= nk, this is compiled into:
@@ -1397,27 +1398,33 @@ createPlan' allSegments signed defOpt regionLb regionUb
     compileSimpleRegionSegment :: Label -> SwitchPlan
     compileSimpleRegionSegment = Unconditionally
 
-    compileContinuousRegionsSegment :: Int
+    compileContinuousRegionsSegment :: Integer
+                                    -> Integer
+                                    -> Int
                                     -> Integer
                                     -> Integer
                                     -> Int
                                     -> [ContiguousSegment]
                                     -> Maybe Label
                                     -> SwitchPlan
-    compileContinuousRegionsSegment segSize segLb segUb numberOfSegments contiguousSegments defLabel
+    compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabel
       = undefined
 
-    compileTwoLabelsType1Segment :: Int
+    compileTwoLabelsType1Segment :: Integer
+                                 -> Integer
+                                 -> Int
                                  -> Integer
                                  -> Integer
                                  -> Label
                                  -> [IntLabel]
                                  -> Label
                                  -> SwitchPlan
-    compileTwoLabelsType1Segment segSize segLb segUb labelForCases casesForTest otherLabel
+    compileTwoLabelsType1Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest otherLabel
       = undefined
 
-    compileTwoLabelsType2Segment :: Int
+    compileTwoLabelsType2Segment :: Integer
+                                 -> Integer
+                                 -> Int
                                  -> Integer
                                  -> Integer
                                  -> Label
@@ -1427,19 +1434,33 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                  -> Integer
                                  -> Label
                                  -> SwitchPlan
-    compileTwoLabelsType2Segment segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
+    compileTwoLabelsType2Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
       = undefined 
 
-    compileFourLabelsSegment :: Int -> Integer -> Integer -> [[IntLabel]] -> Maybe Label -> SwitchPlan
-    compileFourLabelsSegment segSize segLb segUb fourLabelCases fourLabelOtherLabel
+    compileFourLabelsSegment :: Integer
+                             -> Integer
+                             -> Int
+                             -> Integer
+                             -> Integer
+                             -> [[IntLabel]]
+                             -> Maybe Label
+                             -> SwitchPlan
+    compileFourLabelsSegment currentLb currentUb segSize segLb segUb fourLabelCases fourLabelOtherLabel
       = undefined
 
-    compileMultiWayJumpSegment :: Int -> Integer -> Integer -> [IntLabel] -> Maybe Label -> SwitchPlan
-    compileMultiWayJumpSegment segSize segLb segUb cases multiWayJumpOtherLabel
+    compileMultiWayJumpSegment :: Integer
+                               -> Integer
+                               -> Int
+                               -> Integer
+                               -> Integer
+                               -> [IntLabel]
+                               -> Maybe Label
+                               -> SwitchPlan
+    compileMultiWayJumpSegment currentLb currentUb segSize segLb segUb cases multiWayJumpOtherLabel
       = undefined
 
     compileSegment :: SegmentType -> Integer -> Integer -> Maybe Label -> SwitchPlan
-    compileSegment segment lb ub defOpt
+    compileSegment segment currentLb currentUb defOpt
       = undefined 
       where
         go :: SegmentType -> SwitchPlan
@@ -1458,7 +1479,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , contiguousSegments = contiguousSegments
            , defLabel = defLabel
            }
-          = compileContinuousRegionsSegment segSize segLb segUb numberOfSegments contiguousSegments defLabel
+          = compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabel
 
         go TwoLabelsType1 {
              segSize = segSize
@@ -1468,7 +1489,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , casesForTest = casesForTest
            , otherLabel = otherLabel
            }
-          = compileTwoLabelsType1Segment segSize segLb segUb labelForCases casesForTest otherLabel
+          = compileTwoLabelsType1Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest otherLabel
 
         go TwoLabelsType2 {
              segSize = segSize
@@ -1481,7 +1502,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , ubForTest = ubForTest
            , otherLabel = otherLabel
            }
-          = compileTwoLabelsType2Segment segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
+          = compileTwoLabelsType2Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
 
         go FourLabels {
              segSize = segSize
@@ -1490,7 +1511,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , fourLabelCases = fourLabelCases
            , fourLabelOtherLabel = fourLabelOtherLabel
            }
-          = compileFourLabelsSegment segSize segLb segUb fourLabelCases fourLabelOtherLabel
+          = compileFourLabelsSegment currentLb currentUb segSize segLb segUb fourLabelCases fourLabelOtherLabel
 
         go MultiWayJump {
              segSize = segSize
@@ -1499,7 +1520,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , cases = cases
            , multiWayJumpOtherLabel = multiWayJumpOtherLabel
            }
-          = compileMultiWayJumpSegment segSize segLb segUb cases multiWayJumpOtherLabel
+          = compileMultiWayJumpSegment currentLb currentUb segSize segLb segUb cases multiWayJumpOtherLabel
         
         go _ = U.impossible ()
 {-
