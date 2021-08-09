@@ -763,7 +763,7 @@ data SegmentType
     , casesAreDense :: Bool
     , cases :: [IntLabel]
     }
-  |  SimpleRegion {
+  |  SimpleRegion { -- It doesn't matter what the input expression is.  Always go to `label`.
       label :: Label
     , segLb :: Integer
     , segUb :: Integer
@@ -810,6 +810,13 @@ data SegmentType
     , multiWayJumpOtherLabel :: Maybe Label
     }
   deriving (Show, Eq)
+
+printSeg :: SegmentType -> IO ()
+printSeg seg
+  = putStrLn ("\n" ++ show seg)
+
+printSegs :: [SegmentType] -> IO ()
+printSegs segs = F.forM_ segs printSeg
 
 {-
   Returns the first n labels along with their int cases (plus min and max) up to
@@ -894,7 +901,7 @@ getContiguousSegment intLabelList defOpt
           , cSegLb = segLb
           , cSegUb = segUb
           , cIsDefault = isDefault}] | isDefault || Maybe.isNothing defOpt
-            -> SimpleRegion {label = label, segLb = segLb, segUb = segUb}
+            -> SimpleRegion { label = label, segLb = segLb, segUb = segUb }
           _ ->
             ContiguousRegions {
               segSize = totalSegSize
@@ -1342,25 +1349,10 @@ splitIntoSegments intLabelList bitsInWord defOpt
       in
         segmentWithSize : go rest
 
-printSeg :: SegmentType -> IO ()
-printSeg seg
-  = putStrLn ("\n" ++ show seg)
-
-printSegs :: [SegmentType] -> IO ()
-printSegs segs = F.forM_ segs printSeg
-
-
-class SegmentLike t where
-  getSize :: t -> Int
-  getLb :: t -> Integer
-  getUb :: t -> Integer
-  getName :: t -> String
-
-findMiddleSegment :: forall t. SegmentLike t
-                  => [t]
-                  -> Int
-                  -> ([t], Int, [t], Int)
-findMiddleSegment segments totalSize
+splitSegments :: [SegmentType]
+              -> Int
+              -> ([SegmentType], Int, [SegmentType], Int)
+splitSegments segments totalSize
   = (L.reverse leftSegmentRev, leftSegmentSize, rightSegment, rightSegmentSize)
   where
     halfSize = totalSize `div` 2
@@ -1369,43 +1361,144 @@ findMiddleSegment segments totalSize
       = go 0 [] segments
 
     go :: Int
-          -> [t]
-          -> [t]
-          -> ([t], Int, [t], Int)
+          -> [SegmentType]
+          -> [SegmentType]
+          -> ([SegmentType], Int, [SegmentType], Int)
     go accSize pre q@(seg : rest)
       | newTotalSize >= halfSize = (pre, accSize, q, totalSize - accSize)
       | otherwise = go newTotalSize (seg : pre) rest
       where
-        segSize' = getSize seg
+        segSize' = segSize seg
         newTotalSize = accSize + segSize'
 
     go _ _ [] = U.impossible ()
 
-createPlan' :: forall t. SegmentLike t => [t] -> Bool -> Maybe Label -> Integer -> Integer -> SwitchPlan
+createPlan' :: [SegmentType] -> Bool -> Maybe Label -> Integer -> Integer -> SwitchPlan
 createPlan' allSegments signed defOpt regionLb regionUb
   = go allSegments globalTotalSize regionLb regionUb
   where
-    globalTotalSize = L.foldl' (+) 0 $ L.map getSize allSegments
+    globalTotalSize = L.foldl' (+) 0 $ L.map segSize allSegments
 
-    go :: [t] -> Int -> Integer -> Integer -> SwitchPlan
+    go :: [SegmentType] -> Int -> Integer -> Integer -> SwitchPlan
     go [seg] _ lb ub = compileSegment seg lb ub defOpt
     go segments !totalSize !lb !ub
       = let
           (segmentsLeft, segmentLeftSize, segmentsRight, segmentRightSize)
-            = findMiddleSegment segments totalSize
+            = splitSegments segments totalSize
 
           segment = head segmentsRight
-          segmentLb = getLb segment
+          segmentLb = segLb segment
 
           planLeft = go segmentsLeft segmentLeftSize lb (segmentLb - 1)
           planRight = go segmentsRight segmentRightSize segmentLb ub
         in
           IfLT signed segmentLb planLeft planRight
 
-    compileSegment :: SegmentLike t => t -> Integer -> Integer -> Maybe Label -> SwitchPlan
-    compileSegment segment lb ub defOpt
+    compileSimpleRegionSegment :: Label -> SwitchPlan
+    compileSimpleRegionSegment = Unconditionally
+
+    compileContinuousRegionsSegment :: Int
+                                    -> Integer
+                                    -> Integer
+                                    -> Int
+                                    -> [ContiguousSegment]
+                                    -> Maybe Label
+                                    -> SwitchPlan
+    compileContinuousRegionsSegment = undefined
+
+    compileTwoLabelsType1Segment :: Int
+                                 -> Integer
+                                 -> Integer
+                                 -> Label
+                                 -> [IntLabel]
+                                 -> Label
+                                 -> SwitchPlan
+    compileTwoLabelsType1Segment = undefined
+
+    compileTwoLabelsType2Segment :: Int
+                                 -> Integer
+                                 -> Integer
+                                 -> Label
+                                 -> [IntLabel]
+                                 -> Int
+                                 -> Integer
+                                 -> Integer
+                                 -> Label
+                                 -> SwitchPlan
+    compileTwoLabelsType2Segment = undefined 
+
+    compileFourLabelsSegment :: Int -> Integer -> Integer -> [[IntLabel]] -> Maybe Label -> SwitchPlan
+    compileFourLabelsSegment segSize segLb segUb fourLabelCases fourLabelOtherLabel
       = undefined
 
+    compileMultiWayJumpSegment :: Int -> Integer -> Integer -> [IntLabel] -> Maybe Label -> SwitchPlan
+    compileMultiWayJumpSegment segSize segLb segUb cases multiWayJumpOtherLabel
+      = undefined
+
+    compileSegment :: SegmentType -> Integer -> Integer -> Maybe Label -> SwitchPlan
+    compileSegment segment lb ub defOpt
+      = undefined 
+      where
+        go :: SegmentType -> SwitchPlan
+        go SimpleRegion {
+             label = label
+           , segLb = _
+           , segUb = _
+           }
+          = compileSimpleRegionSegment label 
+
+        go ContiguousRegions {
+             segSize = segSize
+           , segLb = segLb
+           , segUb = segUb
+           , numberOfSegments = numberOfSegments
+           , contiguousSegments = contiguousSegments
+           , defLabel = defLabel
+           }
+          = compileContinuousRegionsSegment segSize segLb segUb numberOfSegments contiguousSegments defLabel
+
+        go TwoLabelsType1 {
+             segSize = segSize
+           , segLb = segLb
+           , segUb = segUb
+           , labelForCases = labelForCases
+           , casesForTest = casesForTest
+           , otherLabel = otherLabel
+           }
+          = compileTwoLabelsType1Segment segSize segLb segUb labelForCases casesForTest otherLabel
+
+        go TwoLabelsType2 {
+             segSize = segSize
+           , segLb = segLb
+           , segUb = segUb
+           , labelForCases = labelForCases
+           , casesForTest = casesForTest
+           , casesForTestSize = casesForTestSize
+           , lbForTest = lbForTest
+           , ubForTest = ubForTest
+           , otherLabel = otherLabel
+           }
+          = compileTwoLabelsType2Segment segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
+
+        go FourLabels {
+             segSize = segSize
+           , segLb = segLb
+           , segUb = segUb
+           , fourLabelCases = fourLabelCases
+           , fourLabelOtherLabel = fourLabelOtherLabel
+           }
+          = compileFourLabelsSegment segSize segLb segUb fourLabelCases fourLabelOtherLabel
+
+        go MultiWayJump {
+             segSize = segSize
+           , segLb = segLb
+           , segUb = segUb
+           , cases = cases
+           , multiWayJumpOtherLabel = multiWayJumpOtherLabel
+           }
+          = compileMultiWayJumpSegment segSize segLb segUb cases multiWayJumpOtherLabel
+        
+        go _ = U.impossible ()
 {-
 
 createPlanForIsolatedSegment :: Maybe Label -> [IntLabel] -> SwitchPlan
