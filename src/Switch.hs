@@ -1404,7 +1404,8 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                     -> [ContiguousSegment]
                                     -> Maybe Label
                                     -> SwitchPlan
-    compileContinuousRegionsSegment = undefined
+    compileContinuousRegionsSegment segSize segLb segUb numberOfSegments contiguousSegments defLabel
+      = undefined
 
     compileTwoLabelsType1Segment :: Int
                                  -> Integer
@@ -1413,7 +1414,8 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                  -> [IntLabel]
                                  -> Label
                                  -> SwitchPlan
-    compileTwoLabelsType1Segment = undefined
+    compileTwoLabelsType1Segment segSize segLb segUb labelForCases casesForTest otherLabel
+      = undefined
 
     compileTwoLabelsType2Segment :: Int
                                  -> Integer
@@ -1425,7 +1427,8 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                  -> Integer
                                  -> Label
                                  -> SwitchPlan
-    compileTwoLabelsType2Segment = undefined 
+    compileTwoLabelsType2Segment segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
+      = undefined 
 
     compileFourLabelsSegment :: Int -> Integer -> Integer -> [[IntLabel]] -> Maybe Label -> SwitchPlan
     compileFourLabelsSegment segSize segLb segUb fourLabelCases fourLabelOtherLabel
