@@ -14,6 +14,8 @@ import qualified Data.List as L
 import qualified Data.Map.Lazy as M
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as S
+import qualified Data.Bifunctor as BiFunc
+
 import Debug.Trace
 import qualified SwitchUtils as U
 
@@ -461,11 +463,14 @@ expandRegion (SwitchTargets _ _ Nothing _ _) _ _ = U.impossible ()
 
 cbp :: Bool -> Bool -> Maybe SwitchPlan -> Bool -> Maybe SwitchPlan
        -> SwitchPlan -> (Integer, Integer) -> SwitchPlan
-cbp signed doLeftCheck leftPlan doRightCheck rightPlan =
+cbp signed doLeftCheck leftPlan doRightCheck rightPlan middlePlan (lb, ub) =
   createBracketPlan
     signed
     (if doLeftCheck then leftPlan else Nothing)
     (if doRightCheck then rightPlan else Nothing)
+    middlePlan
+    lb
+    ub
 
 createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
 createEqPlan labelInts lab1 lab2 =
@@ -502,6 +507,7 @@ createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWo
           }
    in BitTest bitTestInfo $ Unconditionally bitTestLabel
 
+{-
 createBracketPlan :: Bool -> Maybe SwitchPlan -> Maybe SwitchPlan -> SwitchPlan
                      -> (Integer, Integer) -> SwitchPlan
 createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan (lb, ub) =
@@ -510,6 +516,7 @@ createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan (lb,
     (Just leftPlan, Nothing) -> IfLT signed lb leftPlan bitTestPlan
     (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
     (Nothing, Nothing) -> bitTestPlan
+-}
 
 -------------------------------------------------------------
 
@@ -541,7 +548,7 @@ nj + 2 -> L2
 ...
 nj + kj -> L2
 (potential gap)
-nj     -> L3
+nm     -> L3
 nm + 1 -> L3
 nm + 2 -> L3
 ...
@@ -552,18 +559,33 @@ with or without default.  The default label is allowed to be any
 of the existing labels.
 The third region is allowed to not be there.
 
-Assuming n1 <= exp <= nk, this is compiled into:
+Assuming ni <= exp <= nm + kk, this is compiled into:
 
     if (exp <= ni + ki)
       goto L1;
     else if (nj <= exp && exp <= nj + kj)
       goto L2;
-    else if (exp <= nj + kj)
+    else if (nm <= exp)
       goto L3; 
     else
       goto L4;
 
-Note: we rearrange the labels so that the region with the most cases is checked first.
+If we only have two regions (there is not L3 label and the
+default is still L4) under the assumption that ni <= exp <= nj + kj
+this gets compiled into:
+
+    if (exp <= ni + ki)
+      goto L1;
+    else if (nj <= exp)
+      goto L2;
+    else
+      goto L4;
+
+For just one region then it's simply a goto L1 (under the assumption
+ni <= exp <= ni + ki).
+
+Another optimization we do is not to issue some of the comparisons
+if the regions are consecutive.
 
 Two Labels Type 1:
 ==================
@@ -743,17 +765,15 @@ data ContiguousSegment
       cSegLabel :: Label
     , cSegLb :: Integer
     , cSegUb :: Integer
-    , cSegCases :: [IntLabel]
-    , cIsDefault :: Bool}
+    , cSegCases :: [IntLabel]}
   deriving Eq
 
 instance Show ContiguousSegment where
-  show ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases, cIsDefault }
+  show ContiguousSegment {cSegLabel, cSegLb, cSegUb, cSegCases }
     = "CSeg ["
       ++ "Label: " ++ show cSegLabel
       ++ ", Lb: " ++ show cSegLb
       ++ ", Ub: " ++ show cSegUb
-      ++ ", IsDefault: " ++ show cIsDefault
       ++ ", Cases: " ++ show cSegCases ++ "]"
 
 data SegmentType
@@ -893,27 +913,29 @@ getContiguousSegment :: [IntLabel]
 getContiguousSegment intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
-      contiguousSegments = L.map createSegment segments
+      (numberOfSegments', nonDefaultSegments)
+        = Maybe.maybe (numberOfSegments, segments) (removeDefaultLabelIfPresent segments numberOfSegments) defOpt
+      contiguousSegments = L.map createSegment nonDefaultSegments
     in
       Just (
-        case contiguousSegments of
-          [ContiguousSegment {
-            cSegLabel = label
-          , cSegLb = segLb
-          , cSegUb = segUb
-          , cIsDefault = isDefault}] | isDefault || Maybe.isNothing defOpt
-            -> SimpleRegion { label = label, segLb = segLb, segUb = segUb }
-          _ ->
-            ContiguousRegions {
-              segSize = totalSegSize
-            , segLb = cSegLb . L.head $ contiguousSegments
-            , segUb = cSegUb . L.last $ contiguousSegments
-            , numberOfSegments = numberOfSegments
-            , contiguousSegments = contiguousSegments
-            , defLabel = defOpt
-            }
-            , rest)
+        ContiguousRegions {
+          segSize = totalSegSize
+        , segLb = cSegLb . L.head $ contiguousSegments
+        , segUb = cSegUb . L.last $ contiguousSegments
+        , numberOfSegments = numberOfSegments'
+        , contiguousSegments = contiguousSegments
+        , defLabel = defOpt
+        }
+        , rest)
   where
+    removeDefaultLabelIfPresent segments numSegments defLabel
+      = BiFunc.second L.reverse $ go segments numSegments []
+      where
+        go [] numSegs res = (numSegs, res)
+        go (p@(label, _) : rest) !numSegs res
+          | label == defLabel = go rest (numSegs - 1) res
+          | otherwise = go rest numSegs (p : res)
+
     splitIntoContSegments ::
         [IntLabel]               -- the input list
         -> Int                   -- total number of cases consumed (totalSegSize)
@@ -964,7 +986,6 @@ getContiguousSegment intLabelList defOpt
           , cSegLb = segLb
           , cSegUb = segUb
           , cSegCases = orderedSegCases
-          , cIsDefault = Just label == defOpt
         }
 
 getTwoLabelsType1Segment :: Integer
@@ -1374,8 +1395,25 @@ splitSegments segments totalSize
 
     go _ _ [] = U.impossible ()
 
-createPlan' :: [SegmentType] -> Bool -> Maybe Label -> Integer -> Integer -> SwitchPlan
-createPlan' allSegments signed defOpt regionLb regionUb
+createBracketPlan :: Bool
+                  -> Maybe SwitchPlan
+                  -> Maybe SwitchPlan
+                  -> SwitchPlan
+                  -> Integer
+                  -> Integer
+                  -> SwitchPlan
+createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan lb ub =
+  case (leftBracketPlanOpt, rightBracketPlanOpt) of
+    (Just leftPlan, Just rightPlan) -> IfLT signed lb leftPlan (IfLE signed ub bitTestPlan rightPlan)
+    (Just leftPlan, Nothing) -> IfLT signed lb leftPlan bitTestPlan
+    (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
+    (Nothing, Nothing) -> bitTestPlan
+
+ccp regionLb regionUb intLabels bitsInWord signed defLabelOpt
+ = createPlan' regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt) signed defLabelOpt
+
+createPlan' :: Integer -> Integer -> [SegmentType] -> Bool -> Maybe Label -> SwitchPlan
+createPlan' regionLb regionUb allSegments signed defOpt
   = go allSegments globalTotalSize regionLb regionUb
   where
     globalTotalSize = L.foldl' (+) 0 $ L.map segSize allSegments
@@ -1407,8 +1445,52 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                     -> [ContiguousSegment]
                                     -> Maybe Label
                                     -> SwitchPlan
-    compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabel
-      = undefined
+    compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabelOpt
+      = case (contiguousSegments, defLabelOpt) of
+          -- We had a default label AND all cases present were going to it.
+          -- This is the degenerate case but possible as a result of this algorithm; not possible directly from the user program.
+          ([], Just defLabel) -> Unconditionally defLabel
+          ([], Nothing) -> U.impossible ()
+
+          (segs@(seg : _), Just defLabel)
+             -> let
+                  defLabelPlanOpt = Just . Unconditionally $ defLabel
+                in
+                  fst $
+                  L.foldr (accum defLabelPlanOpt)
+                          (Unconditionally defLabel, True)
+                          ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
+
+          (ContiguousSegment { cSegLabel = cSegLabel } : rest, Nothing)
+            -> compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
+      where
+        accum :: Maybe SwitchPlan -> (Integer, ContiguousSegment) -> (SwitchPlan, Bool) -> (SwitchPlan, Bool)
+        accum defLabelPlanOpt
+              (segUb1,
+               ContiguousSegment {
+                 cSegLabel = cSegLabel2
+               , cSegLb = cSegLb2
+               , cSegUb = cSegUb2
+               })
+              (rightPlan, isGotoDefLabel)
+          = let
+              leftPlan2Opt | segUb1 + 1 /= cSegLb2 = defLabelPlanOpt
+                           | otherwise = Nothing
+              middlePlan2 = Unconditionally cSegLabel2
+              rightPlan2Opt | cSegUb2 /= currentUb = Just rightPlan
+                            | otherwise = Nothing -- This can only happen on the rightmost segment.
+                                                  -- It's a shame we do the check for evert segment but it simplifies the code.
+
+              segSpan = U.rangeSpan cSegLb2 cSegUb2
+
+              -- If the span is 1, and the right plan was to go to default and the left plan is there (which means we are again going to default)
+              -- then lets shortcircuit the usual thing and make a shorter plan based on equality instead of two comparisons.
+              res | segSpan == 1 && isGotoDefLabel && Maybe.isJust leftPlan2Opt
+                    = IfEqual cSegLb2 cSegLabel2 (Maybe.fromJust defLabelPlanOpt)
+                  | otherwise
+                    = createBracketPlan signed leftPlan2Opt rightPlan2Opt middlePlan2 cSegLb2 cSegUb2
+            in
+              (res, False)
 
     compileTwoLabelsType1Segment :: Integer
                                  -> Integer
@@ -1435,7 +1517,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
                                  -> Label
                                  -> SwitchPlan
     compileTwoLabelsType2Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
-      = undefined 
+      = undefined
 
     compileFourLabelsSegment :: Integer
                              -> Integer
@@ -1461,7 +1543,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
 
     compileSegment :: SegmentType -> Integer -> Integer -> Maybe Label -> SwitchPlan
     compileSegment segment currentLb currentUb defOpt
-      = undefined 
+      = go segment
       where
         go :: SegmentType -> SwitchPlan
         go SimpleRegion {
@@ -1469,7 +1551,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , segLb = _
            , segUb = _
            }
-          = compileSimpleRegionSegment label 
+          = compileSimpleRegionSegment label
 
         go ContiguousRegions {
              segSize = segSize
@@ -1521,7 +1603,7 @@ createPlan' allSegments signed defOpt regionLb regionUb
            , multiWayJumpOtherLabel = multiWayJumpOtherLabel
            }
           = compileMultiWayJumpSegment currentLb currentUb segSize segLb segUb cases multiWayJumpOtherLabel
-        
+
         go _ = U.impossible ()
 {-
 
