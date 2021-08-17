@@ -1438,14 +1438,13 @@ createPlan' regionLb regionUb allSegments signed defOpt
 
     compileContinuousRegionsSegment :: Integer
                                     -> Integer
-                                    -> Int
                                     -> Integer
                                     -> Integer
                                     -> Int
                                     -> [ContiguousSegment]
                                     -> Maybe Label
                                     -> SwitchPlan
-    compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabelOpt
+    compileContinuousRegionsSegment currentLb currentUb segLb segUb numberOfSegments contiguousSegments defLabelOpt
       = case (contiguousSegments, defLabelOpt) of
           -- We had a default label AND all cases present were going to it.
           -- This is the degenerate case but possible as a result of this algorithm; not possible directly from the user program.
@@ -1462,7 +1461,7 @@ createPlan' regionLb regionUb allSegments signed defOpt
                           ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
 
           (ContiguousSegment { cSegLabel = cSegLabel } : rest, Nothing)
-            -> compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
+            -> compileContinuousRegionsSegment currentLb currentUb segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
       where
         accum :: SwitchPlan -> (Integer, ContiguousSegment) -> (SwitchPlan, Bool) -> (SwitchPlan, Bool)
         accum defLabelPlan
@@ -1485,12 +1484,12 @@ createPlan' regionLb regionUb allSegments signed defOpt
 
               -- If the span is 1, and the right plan was to go to default and the left plan is there (which means we are again going to default)
               -- then lets shortcircuit the usual thing and make a shorter plan based on equality instead of two comparisons.
-              res | segSpan == 1 && isGotoDefLabel && Maybe.isJust leftPlan2Opt
-                    = IfEqual cSegLb2 cSegLabel2 defLabelPlan
-                  | otherwise
-                    = createBracketPlan signed leftPlan2Opt rightPlan2Opt middlePlan2 cSegLb2 cSegUb2
+              plan | segSpan == 1 && isGotoDefLabel && Maybe.isJust leftPlan2Opt
+                     = IfEqual cSegLb2 cSegLabel2 defLabelPlan
+                   | otherwise
+                     = createBracketPlan signed leftPlan2Opt rightPlan2Opt middlePlan2 cSegLb2 cSegUb2
             in
-              (res, False)
+              (plan, False)
 
     compileTwoLabelsType1Segment :: Integer
                                  -> Integer
@@ -1554,14 +1553,13 @@ createPlan' regionLb regionUb allSegments signed defOpt
           = compileSimpleRegionSegment label
 
         go ContiguousRegions {
-             segSize = segSize
-           , segLb = segLb
+             segLb = segLb
            , segUb = segUb
            , numberOfSegments = numberOfSegments
            , contiguousSegments = contiguousSegments
            , defLabel = defLabel
            }
-          = compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb numberOfSegments contiguousSegments defLabel
+          = compileContinuousRegionsSegment currentLb currentUb segLb segUb numberOfSegments contiguousSegments defLabel
 
         go TwoLabelsType1 {
              segSize = segSize
