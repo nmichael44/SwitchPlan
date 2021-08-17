@@ -1454,18 +1454,18 @@ createPlan' regionLb regionUb allSegments signed defOpt
 
           (segs@(seg : _), Just defLabel)
              -> let
-                  defLabelPlanOpt = Just . Unconditionally $ defLabel
+                  defLabelPlan = Unconditionally defLabel
                 in
                   fst $
-                  L.foldr (accum defLabelPlanOpt)
+                  L.foldr (accum defLabelPlan)
                           (Unconditionally defLabel, True)
                           ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
 
           (ContiguousSegment { cSegLabel = cSegLabel } : rest, Nothing)
             -> compileContinuousRegionsSegment currentLb currentUb segSize segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
       where
-        accum :: Maybe SwitchPlan -> (Integer, ContiguousSegment) -> (SwitchPlan, Bool) -> (SwitchPlan, Bool)
-        accum defLabelPlanOpt
+        accum :: SwitchPlan -> (Integer, ContiguousSegment) -> (SwitchPlan, Bool) -> (SwitchPlan, Bool)
+        accum defLabelPlan
               (segUb1,
                ContiguousSegment {
                  cSegLabel = cSegLabel2
@@ -1474,7 +1474,7 @@ createPlan' regionLb regionUb allSegments signed defOpt
                })
               (rightPlan, isGotoDefLabel)
           = let
-              leftPlan2Opt | segUb1 + 1 /= cSegLb2 = defLabelPlanOpt
+              leftPlan2Opt | segUb1 + 1 /= cSegLb2 = Just defLabelPlan
                            | otherwise = Nothing
               middlePlan2 = Unconditionally cSegLabel2
               rightPlan2Opt | cSegUb2 /= currentUb = Just rightPlan
@@ -1486,7 +1486,7 @@ createPlan' regionLb regionUb allSegments signed defOpt
               -- If the span is 1, and the right plan was to go to default and the left plan is there (which means we are again going to default)
               -- then lets shortcircuit the usual thing and make a shorter plan based on equality instead of two comparisons.
               res | segSpan == 1 && isGotoDefLabel && Maybe.isJust leftPlan2Opt
-                    = IfEqual cSegLb2 cSegLabel2 (Maybe.fromJust defLabelPlanOpt)
+                    = IfEqual cSegLb2 cSegLabel2 defLabelPlan
                   | otherwise
                     = createBracketPlan signed leftPlan2Opt rightPlan2Opt middlePlan2 cSegLb2 cSegUb2
             in
