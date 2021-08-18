@@ -1533,7 +1533,8 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
       = case casesInts of
           []     -> U.impossible ()
           [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
-          [_, _] -> createEqPlan casesInts labelForCases otherLabel
+          [_, _] -> createEqPlan casesInts labelForCases otherLabel -- The invariant is if you are outside the segment you always go to default
+                                                                    -- and here `otherLabel` equals the default label (if it exists).
           _      -> let
                       leftPlan2Opt  | segLb /= currentLb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
                                     | otherwise = Nothing
