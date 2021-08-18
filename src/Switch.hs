@@ -994,13 +994,14 @@ getContiguousSegment intLabelList defOpt
 In the presense of a default label this function includes the default
 as one of it's labels.  So for example for a case statement like the following:
    1 -> L1
-   2 -> L1
+   2 -> L2
    3 -> L1
-   4 -> L2
+   5 -> L1
    _ -> L3
 it will fail to apply.  The reason we want it to fail, is that if we do the
-bit test on L1, and it fails then we don't know if we should go to L2 or to L3 since
-the interval may contain gaps.
+bit test on L1, and it fails then we don't know if we should go to L2 (for input 2)
+or to L3 (for input 4 (the missing case)).  The presense of gaps forces us to reject
+this case statement.
 Idea for future work: Detect the case when the interval is dense, and in that case don't
 fail but produce the bit test -- in such a case we know that if the bit test fails
 we must go to L2.
