@@ -472,14 +472,6 @@ cbp signed doLeftCheck leftPlan doRightCheck rightPlan middlePlan (lb, ub) =
     lb
     ub
 
-createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
-createEqPlan labelInts lab1 lab2 =
-  createEqPlanWithPlan labelInts lab1 (Unconditionally lab2)
-
-createEqPlanWithPlan :: [Integer] -> Label -> SwitchPlan -> SwitchPlan
-createEqPlanWithPlan labelInts thenLabel elsePlan =
-  F.foldr' (`IfEqual` thenLabel) elsePlan labelInts
-
 createEqPlanFor3 :: Bool -> [Integer] -> Label -> Label -> (Integer, Integer) -> SwitchPlan
 createEqPlanFor3 signed labelInts lab1 lab2 (lb, ub) =
   let (n0, n1, n2) = case labelInts of [x0, x1, x2] -> (x0, x1, x2); _ -> U.impossible ()
@@ -489,23 +481,6 @@ createEqPlanFor3 signed labelInts lab1 lab2 (lb, ub) =
           | n0 == lb && n0 + 1 == n1 -> IfLE signed n1 lab1Plan (IfEqual n2 lab1 lab2Plan)
           | n2 == ub && n2 - 1 == n1 -> IfLT signed n1 (IfEqual n0 lab1 lab2Plan) lab1Plan
           | otherwise -> createEqPlan labelInts lab1 lab2
-
-createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
-createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord =
-  let canSkipOffset = regionLb >= 0 && regionUb < bitsInWord
-      (offset, constants) =
-        if canSkipOffset
-          then (Nothing, intsOfLabel)
-          else (Just regionLb, (\n -> n - regionLb) <$> intsOfLabel)
-      magicConstant = U.calcMagicConstant constants bitsInWord
-      otherLabelPlan = Unconditionally otherLabel
-      bitTestInfo =
-        BitTestInfo
-          { offset = offset,
-            magicConstant = magicConstant,
-            bitTestFailedPlan = otherLabelPlan
-          }
-   in BitTest bitTestInfo $ Unconditionally bitTestLabel
 
 {-
 createBracketPlan :: Bool -> Maybe SwitchPlan -> Maybe SwitchPlan -> SwitchPlan
@@ -804,6 +779,7 @@ data SegmentType
     , labelForCases :: Label
     , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
     , otherLabel :: Label
+    , defLabel :: Maybe Label
     }
   | TwoLabelsType2 {
       segSize :: Int
@@ -1057,7 +1033,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
         in
           case M.toList m of
             [(lab, _)] -> lab
-            [(lab1, cnt1), (lab2, cnt2)] | cnt1 >= cnt2 -> lab1
+            [(lab1, cnt1), (lab2, cnt2)] | cnt1 > cnt2 -> lab1
                                          | otherwise -> lab2
             _ -> U.impossible ()
 
@@ -1094,6 +1070,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
         , labelForCases = snd . head $ casesForTest
         , casesForTest = L.reverse casesForTest
         , otherLabel = otherLabel
+        , defLabel = defOpt
         }
 
 getTwoLabelsType2Segment :: Integer
@@ -1428,11 +1405,44 @@ createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan lb u
     (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
     (Nothing, Nothing) -> bitTestPlan
 
-ccp regionLb regionUb intLabels bitsInWord signed defLabelOpt
- = createPlan' regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt) signed defLabelOpt
+createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
+createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord =
+  let canSkipOffset = regionLb >= 0 && regionUb < bitsInWord
+      (offset, constants) =
+        if canSkipOffset
+          then (Nothing, intsOfLabel)
+          else (Just regionLb, (\n -> n - regionLb) <$> intsOfLabel)
+      magicConstant = U.calcMagicConstant constants bitsInWord
+      otherLabelPlan = Unconditionally otherLabel
+      bitTestInfo =
+        BitTestInfo
+          { offset = offset,
+            magicConstant = magicConstant,
+            bitTestFailedPlan = otherLabelPlan
+          }
+   in
+     BitTest bitTestInfo $ Unconditionally bitTestLabel
 
-createPlan' :: Integer -> Integer -> [SegmentType] -> Bool -> Maybe Label -> SwitchPlan
-createPlan' regionLb regionUb allSegments signed defOpt
+createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
+createEqPlan labelInts lab1 lab2 =
+  createEqPlanWithPlan labelInts lab1 (Unconditionally lab2)
+
+createEqPlanWithPlan :: [Integer] -> Label -> SwitchPlan -> SwitchPlan
+createEqPlanWithPlan labelInts thenLabel elsePlan =
+  F.foldr' (`IfEqual` thenLabel) elsePlan labelInts
+
+ccp :: Integer
+    -> Integer
+    -> [IntLabel]
+    -> Integer
+    -> Bool
+    -> Maybe Label
+    -> SwitchPlan
+ccp regionLb regionUb intLabels bitsInWord signed defLabelOpt
+ = createPlan' bitsInWord regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt) signed defLabelOpt
+
+createPlan' :: Integer -> Integer -> Integer -> [SegmentType] -> Bool -> Maybe Label -> SwitchPlan
+createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
   = go allSegments globalTotalSize regionLb regionUb
   where
     globalTotalSize = L.foldl' (+) 0 $ L.map segSize allSegments
@@ -1510,51 +1520,32 @@ createPlan' regionLb regionUb allSegments signed defOpt
             in
               (plan, False)
 
-{-
-TwoLabelsType1 {
-      segSize :: Int
-    , segLb :: Integer
-    , segUb :: Integer
-    , labelForCases :: Label
-    , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
-    , otherLabel :: Label
-    }
-
-  data BitTestInfo = BitTestInfo
-  { offset :: Maybe Integer,
-    magicConstant :: Integer,
-    bitTestFailedPlan :: SwitchPlan
-  }
-
-data BitTestType2Info = BitTestType2Info
-  { offset2 :: Maybe Integer,
-    magicConstant2 :: Integer,
-    bitTestFailedPlan2 :: SwitchPlan
-  }
-
-data SwitchPlan
-  = Unconditionally Label
-  | IfEqual Integer Label SwitchPlan
-  | IfLT Bool Integer SwitchPlan SwitchPlan
-  | IfLE Bool Integer SwitchPlan SwitchPlan
-  | BitTest BitTestInfo SwitchPlan
-  | BitTestType2 BitTestType2Info [(Integer, Label)]
-  | JumpTable SwitchTargets
--}
     compileTwoLabelsType1Segment :: Integer
                                  -> Integer
-                                 -> Int
                                  -> Integer
                                  -> Integer
                                  -> Label
                                  -> [IntLabel]
                                  -> Label
+                                 -> Maybe Label
                                  -> SwitchPlan
-    compileTwoLabelsType1Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest otherLabel
+    compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel defLabelOpt
       = let
-          
+          leftPlan2Opt | segLb /= currentLb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                       | otherwise = Nothing
+          rightPlan2Opt | segUb /= currentUb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                        | otherwise = Nothing
+
+          casesInts = L.map fst casesForTest
         in
-          undefined
+          case casesInts of
+            []     -> U.impossible ()
+            [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
+            [_, _] -> createEqPlan casesInts labelForCases otherLabel
+            _      -> let
+                        bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
+                      in
+                        createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan segLb segUb          
 
     compileTwoLabelsType2Segment :: Integer
                                  -> Integer
@@ -1615,14 +1606,14 @@ data SwitchPlan
           = compileContinuousRegionsSegment currentLb currentUb segLb segUb numberOfSegments contiguousSegments defLabel
 
         go TwoLabelsType1 {
-             segSize = segSize
-           , segLb = segLb
+             segLb = segLb
            , segUb = segUb
            , labelForCases = labelForCases
            , casesForTest = casesForTest
            , otherLabel = otherLabel
+           , defLabel = defLabelOpt
            }
-          = compileTwoLabelsType1Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest otherLabel
+          = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel defLabelOpt
 
         go TwoLabelsType2 {
              segSize = segSize
