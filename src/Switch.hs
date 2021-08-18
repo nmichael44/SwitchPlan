@@ -1530,22 +1530,20 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
                                  -> Maybe Label
                                  -> SwitchPlan
     compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel defLabelOpt
-      = let
-          leftPlan2Opt | segLb /= currentLb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
-                       | otherwise = Nothing
-          rightPlan2Opt | segUb /= currentUb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
-                        | otherwise = Nothing
-
-          casesInts = L.map fst casesForTest
-        in
-          case casesInts of
-            []     -> U.impossible ()
-            [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
-            [_, _] -> createEqPlan casesInts labelForCases otherLabel
-            _      -> let
-                        bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
-                      in
-                        createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan segLb segUb          
+      = case casesInts of
+          []     -> U.impossible ()
+          [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
+          [_, _] -> createEqPlan casesInts labelForCases otherLabel
+          _      -> let
+                      leftPlan2Opt  | segLb /= currentLb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                                    | otherwise = Nothing
+                      rightPlan2Opt | segUb /= currentUb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                                    | otherwise = Nothing
+                      bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
+                    in
+                      createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan segLb segUb          
+      where
+        casesInts = L.map fst casesForTest
 
     compileTwoLabelsType2Segment :: Integer
                                  -> Integer
