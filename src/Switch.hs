@@ -913,7 +913,7 @@ getContiguousSegment :: [IntLabel]
 getContiguousSegment intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
-      segLb = fst . L.last . snd . L.head $ segments -- remember thgat the lists of cases in segments are in reverse order.
+      segLb = fst . L.last . snd . L.head $ segments -- remember that the lists of cases in segments are in reverse order.
       segUb = fst . L.head . snd . L.last $ segments
       (numberOfSegments', nonDefaultSegments)
         = Maybe.maybe (numberOfSegments, segments) (removeDefaultLabelIfPresent segments numberOfSegments) defOpt
