@@ -888,7 +888,7 @@ minBitTestSize = 4
 
 mergeConsecutiveIsolatedSegments :: [SegmentType] -> [SegmentType]
 mergeConsecutiveIsolatedSegments
-  = L.foldr mergeSegments []  -- foldr here to avoid the O(n^2) cost with the append of the 'cases' lists.
+  = F.foldr' mergeSegments []  -- foldr here to avoid the O(n^2) cost with the append of the 'cases' lists.
   where
     mergeSegments :: SegmentType -> [SegmentType] -> [SegmentType]
     mergeSegments IsolatedValues { segSize = segSize1, segLb = segLb1, segUb = segUb1, casesAreDense = casesAreDense1, cases = cases1 }
@@ -913,6 +913,8 @@ getContiguousSegment :: [IntLabel]
 getContiguousSegment intLabelList defOpt
   = let
       (totalSegSize, numberOfSegments, segments, rest) = splitIntoContSegments intLabelList 0 0 []
+      segLb = fst . L.last . snd . L.head $ segments -- remember thgat the lists of cases in segments are in reverse order.
+      segUb = fst . L.head . snd . L.last $ segments
       (numberOfSegments', nonDefaultSegments)
         = Maybe.maybe (numberOfSegments, segments) (removeDefaultLabelIfPresent segments numberOfSegments) defOpt
       contiguousSegments = L.map createSegment nonDefaultSegments
@@ -920,8 +922,8 @@ getContiguousSegment intLabelList defOpt
       Just (
         ContiguousRegions {
           segSize = totalSegSize
-        , segLb = cSegLb . L.head $ contiguousSegments
-        , segUb = cSegUb . L.last $ contiguousSegments
+        , segLb = segLb
+        , segUb = segUb
         , numberOfSegments = numberOfSegments'
         , contiguousSegments = contiguousSegments
         , defLabel = defOpt
@@ -988,6 +990,22 @@ getContiguousSegment intLabelList defOpt
           , cSegCases = orderedSegCases
         }
 
+{-
+In the presense of a default label this function includes the default
+as one of it's labels.  So for example for a case statement like the following:
+   1 -> L1
+   2 -> L1
+   3 -> L1
+   4 -> L2
+   _ -> L3
+it will fail to apply.  The reason we want it to fail, is that if we do the
+bit test on L1, and it fails then we don't know if we should go to L2 or to L3 since
+the interval may contain gaps.
+Idea for future work: Detect the case when the interval is dense, and in that case don't
+fail but produce the bit test -- in such a case we know that if the bit test fails
+we must go to L2.
+-}
+
 getTwoLabelsType1Segment :: Integer
                          -> [IntLabel]
                          -> Maybe Label
@@ -1013,7 +1031,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
           labSet' = S.insert lab labSet
         in
           if S.size labSet' > 2
-            || totalSpan > bitsInWord -- Idea for later:
+            || totalSpan > bitsInWord -- Idea for future work:
                                       -- Here we can potentially ignore n's that
                                       -- go to the default label if there is one.
                                       -- We leave this optimization for future work.
@@ -1034,7 +1052,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
     pickLabelWithGreatestFrequency intLabels
       = let
           m :: M.Map Label Int
-          m = L.foldr (\(_, lab) acc -> M.insertWith (+) lab 1 acc) M.empty intLabels
+          m = F.foldr' (\(_, lab) acc -> M.insertWith (+) lab 1 acc) M.empty intLabels
         in
           case M.toList m of
             [(lab, _)] -> lab
@@ -1456,9 +1474,9 @@ createPlan' regionLb regionUb allSegments signed defOpt
                   defLabelPlan = Unconditionally defLabel
                 in
                   fst $
-                  L.foldr (accum defLabelPlan)
-                          (Unconditionally defLabel, True)
-                          ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
+                  F.foldr' (accum defLabelPlan)
+                           (Unconditionally defLabel, True)
+                           ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
 
           (ContiguousSegment { cSegLabel = cSegLabel } : rest, Nothing)
             -> compileContinuousRegionsSegment currentLb currentUb segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
@@ -1491,6 +1509,37 @@ createPlan' regionLb regionUb allSegments signed defOpt
             in
               (plan, False)
 
+{-
+TwoLabelsType1 {
+      segSize :: Int
+    , segLb :: Integer
+    , segUb :: Integer
+    , labelForCases :: Label
+    , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
+    , otherLabel :: Label
+    }
+
+  data BitTestInfo = BitTestInfo
+  { offset :: Maybe Integer,
+    magicConstant :: Integer,
+    bitTestFailedPlan :: SwitchPlan
+  }
+
+data BitTestType2Info = BitTestType2Info
+  { offset2 :: Maybe Integer,
+    magicConstant2 :: Integer,
+    bitTestFailedPlan2 :: SwitchPlan
+  }
+
+data SwitchPlan
+  = Unconditionally Label
+  | IfEqual Integer Label SwitchPlan
+  | IfLT Bool Integer SwitchPlan SwitchPlan
+  | IfLE Bool Integer SwitchPlan SwitchPlan
+  | BitTest BitTestInfo SwitchPlan
+  | BitTestType2 BitTestType2Info [(Integer, Label)]
+  | JumpTable SwitchTargets
+-}
     compileTwoLabelsType1Segment :: Integer
                                  -> Integer
                                  -> Int
@@ -1501,7 +1550,10 @@ createPlan' regionLb regionUb allSegments signed defOpt
                                  -> Label
                                  -> SwitchPlan
     compileTwoLabelsType1Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest otherLabel
-      = undefined
+      = let
+          
+        in
+          undefined
 
     compileTwoLabelsType2Segment :: Integer
                                  -> Integer
