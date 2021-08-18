@@ -15,6 +15,7 @@ import qualified Data.Map.Lazy as M
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as S
 import qualified Data.Bifunctor as BiFunc
+import qualified Data.Ord as Order
 
 import Debug.Trace
 import qualified SwitchUtils as U
@@ -1421,6 +1422,38 @@ createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWo
    in
      BitTest bitTestInfo $ Unconditionally bitTestLabel
 
+createBitTestPlanType2 :: Integer
+                       -> Integer
+                       -> Label
+                       -> Integer
+                       -> [[IntLabel]]
+                       -> Bool
+                       -> SwitchPlan
+createBitTestPlanType2 regionLb regionUb otherLabel bitsInWord caseIntLabels hasDefault
+  = let      
+      ls = L.map (\xs -> (snd . L.head $ xs, L.map fst xs)) caseIntLabels
+      sortedOnLengthAux = L.sortOn (Order.Down . L.length . snd) ls -- sortOn only evaluates the list length once per element (decorate, sort, undecorate)
+
+      sortedOnLength | hasDefault = sortedOnLengthAux
+                     | otherwise = L.init sortedOnLengthAux
+
+      labels = L.map fst sortedOnLength
+      nns = L.map snd sortedOnLength
+
+      canSkipOffset = regionLb >= 0 && 2 * regionUb < bitsInWord
+      (offset2, constants) =
+        if canSkipOffset
+          then (Nothing, nns)
+          else (Just regionLb, L.map (L.map (\n -> n - regionLb)) nns)
+
+      (magicConstant2, bitPatterns) = U.calcMagicConstant2 constants
+
+      bitTestFailedPlan = Unconditionally otherLabel
+      bitTestType2Info = BitTestType2Info {offset2 = offset2, magicConstant2 = magicConstant2, bitTestFailedPlan2 = bitTestFailedPlan}
+      intLabels = zip bitPatterns labels
+   in
+      BitTestType2 bitTestType2Info intLabels
+
 createEqPlan :: [Integer] -> Label -> Label -> SwitchPlan
 createEqPlan labelInts lab1 lab2 =
   createEqPlanWithPlan labelInts lab1 (Unconditionally lab2)
@@ -1546,18 +1579,28 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
 
     compileTwoLabelsType2Segment :: Integer
                                  -> Integer
-                                 -> Int
-                                 -> Integer
-                                 -> Integer
                                  -> Label
                                  -> [IntLabel]
-                                 -> Int
                                  -> Integer
                                  -> Integer
                                  -> Label
                                  -> SwitchPlan
-    compileTwoLabelsType2Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
-      = undefined
+    compileTwoLabelsType2Segment currentLb currentUb labelForCases casesForTest lbForTest ubForTest otherLabel
+      = case casesInts of
+          []     -> U.impossible ()
+          [_]    -> createEqPlan casesInts labelForCases otherLabel
+          [_, _] -> createEqPlan casesInts labelForCases otherLabel
+          _      -> let
+                      otherLabelPlan = Just . Unconditionally $ otherLabel
+                      leftPlan2Opt  | lbForTest /= currentLb = otherLabelPlan
+                                    | otherwise = Nothing
+                      rightPlan2Opt | ubForTest /= currentUb = otherLabelPlan
+                                    | otherwise = Nothing
+                      bitTestPlan = createBitTestPlan labelForCases casesInts lbForTest ubForTest otherLabel bitsInWord
+                    in
+                      createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan lbForTest ubForTest
+      where
+        casesInts = L.map fst casesForTest
 
     compileFourLabelsSegment :: Integer
                              -> Integer
@@ -1568,7 +1611,8 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
                              -> Maybe Label
                              -> SwitchPlan
     compileFourLabelsSegment currentLb currentUb segSize segLb segUb fourLabelCases fourLabelOtherLabel
-      = undefined
+      = undefined 
+      
 
     compileMultiWayJumpSegment :: Integer
                                -> Integer
@@ -1612,17 +1656,13 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
           = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel
 
         go TwoLabelsType2 {
-             segSize = segSize
-           , segLb = segLb
-           , segUb = segUb
-           , labelForCases = labelForCases
+             labelForCases = labelForCases
            , casesForTest = casesForTest
-           , casesForTestSize = casesForTestSize
            , lbForTest = lbForTest
            , ubForTest = ubForTest
            , otherLabel = otherLabel
            }
-          = compileTwoLabelsType2Segment currentLb currentUb segSize segLb segUb labelForCases casesForTest casesForTestSize lbForTest ubForTest otherLabel
+          = compileTwoLabelsType2Segment currentLb currentUb labelForCases casesForTest lbForTest ubForTest otherLabel
 
         go FourLabels {
              segSize = segSize
