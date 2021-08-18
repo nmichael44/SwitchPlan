@@ -777,9 +777,8 @@ data SegmentType
     , segLb :: Integer
     , segUb :: Integer
     , labelForCases :: Label
-    , casesForTest :: [IntLabel] -- FIX THIS! via GotoLabel! Not true: This can be empty.  That means we have something like : (1 -> L1, 2 -> L1, _ -> L1) i.e. everything going to default.
+    , casesForTest :: [IntLabel]
     , otherLabel :: Label
-    , defLabel :: Maybe Label
     }
   | TwoLabelsType2 {
       segSize :: Int
@@ -1070,7 +1069,6 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
         , labelForCases = snd . head $ casesForTest
         , casesForTest = L.reverse casesForTest
         , otherLabel = otherLabel
-        , defLabel = defOpt
         }
 
 getTwoLabelsType2Segment :: Integer
@@ -1527,18 +1525,18 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
                                  -> Label
                                  -> [IntLabel]
                                  -> Label
-                                 -> Maybe Label
                                  -> SwitchPlan
-    compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel defLabelOpt
+    compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel
       = case casesInts of
           []     -> U.impossible ()
           [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
           [_, _] -> createEqPlan casesInts labelForCases otherLabel -- The invariant is if you are outside the segment you always go to default
                                                                     -- and here `otherLabel` equals the default label (if it exists).
           _      -> let
-                      leftPlan2Opt  | segLb /= currentLb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                      otherLabelPlan = Just . Unconditionally $ otherLabel
+                      leftPlan2Opt  | segLb /= currentLb = otherLabelPlan
                                     | otherwise = Nothing
-                      rightPlan2Opt | segUb /= currentUb = Just . Unconditionally . Maybe.fromJust $ defLabelOpt
+                      rightPlan2Opt | segUb /= currentUb = otherLabelPlan
                                     | otherwise = Nothing
                       bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
                     in
@@ -1610,9 +1608,8 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
            , labelForCases = labelForCases
            , casesForTest = casesForTest
            , otherLabel = otherLabel
-           , defLabel = defLabelOpt
            }
-          = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel defLabelOpt
+          = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel
 
         go TwoLabelsType2 {
              segSize = segSize
