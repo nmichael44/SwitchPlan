@@ -16,6 +16,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as S
 import qualified Data.Bifunctor as BiFunc
 import qualified Data.Ord as Order
+import qualified Data.Function as Func
 
 import Debug.Trace
 import qualified SwitchUtils as U
@@ -732,7 +733,7 @@ Assuming n1 <= exp <= nk, this is compiled into:
 
   Notes: The 3 label case overlaps the (Three Label) compilation scheme above.  They do have different constraints though
   (this scheme uses 2 bits per label) so there are cases when this one is not applicable but the other one is.
-  When they are both applicable I believe this one is faster.  We only implement this one.  I dp not believe it is worth
+  When they are both applicable I believe this one is faster.  We only implement this one.  I do not believe it is worth
   the trouble of doing both.
 -}
 
@@ -796,8 +797,8 @@ data SegmentType
       segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
-    , fourLabelCases :: [[IntLabel]]
-    , fourLabelOtherLabel :: Maybe Label
+    , fourLabelCases :: [(Label, [Integer])]
+    , fourLabelOtherLabel :: Label
     }
   | MultiWayJump {
       segSize :: Int
@@ -1232,8 +1233,21 @@ getFourLabelSegment bitsInWord intLabelList defOpt
       | segSize < minBitTestSize = Nothing
       | otherwise
         = let
-            m' = Maybe.maybe m (`M.delete` m) defOpt
-            caseLists = L.map (L.reverse . snd) $ M.toList m'
+                                         -- Here we can do better by noticing if the interval is dense or not
+                                         -- In that case we can never go to default (if we are in the region)
+                                         -- so we can skip one of the `else if` statements.
+                                         -- We leave this for future work.
+            otherLabel
+              = case defOpt of
+                  Just defLabel -> defLabel
+                  Nothing -> findLabelWithMinimumCases m
+            
+            m' = M.delete otherLabel m
+
+            caseLists :: [(Label, [Integer])]
+            caseLists
+              = L.sortOn (Order.Down . L.length . snd) $
+                L.map (BiFunc.second (L.reverse . L.map fst)) $ M.toList m'
           in
             Just
               (FourLabels {
@@ -1241,9 +1255,17 @@ getFourLabelSegment bitsInWord intLabelList defOpt
                , segLb = startNum
                , segUb = segUb
                , fourLabelCases = caseLists
-               , fourLabelOtherLabel = defOpt
+               , fourLabelOtherLabel = otherLabel
                },
                rest)
+      where
+        findLabelWithMinimumCases :: M.Map Label [IntLabel] -> Label
+        findLabelWithMinimumCases m
+          = let
+              xs = L.map (\(lab, ns) -> (L.length ns, lab)) $ M.toList m
+              minPair = L.minimumBy (compare `Func.on` fst) xs
+            in
+              snd minPair
 
     addToMap :: IntLabel -> Maybe [IntLabel] -> Maybe [IntLabel]
     addToMap p xs
@@ -1332,11 +1354,21 @@ findSegment bitsInWord defOpt intLabelList =
       | otherwise -> pickLargest [contSeg, btType1, btType2, btFourLabel, multiWayJump]
 
   where
-    contSeg = getContiguousSegment intLabelList defOpt
-    btType1 = getTwoLabelsType1Segment bitsInWord intLabelList defOpt
-    btType2 = getTwoLabelsType2Segment bitsInWord intLabelList defOpt
-    btFourLabel = getFourLabelSegment bitsInWord intLabelList defOpt
-    multiWayJump = getMultiWayJumpSegment intLabelList defOpt
+    contiguousSegmentEnabled     = False
+    twoLabelsType1SegmentEnabled = False
+    twoLabelsType2SegmentTrue    = False
+    fourLabelSegmentEnabled      = True
+    multiWayJumpSegmentEnabled   = False
+
+    contSeg      = doIfEnabled contiguousSegmentEnabled     $ getContiguousSegment intLabelList defOpt
+    btType1      = doIfEnabled twoLabelsType1SegmentEnabled $ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
+    btType2      = doIfEnabled twoLabelsType2SegmentTrue    $ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
+    btFourLabel  = doIfEnabled fourLabelSegmentEnabled      $ getFourLabelSegment bitsInWord intLabelList defOpt
+    multiWayJump = doIfEnabled multiWayJumpSegmentEnabled   $ getMultiWayJumpSegment intLabelList defOpt
+
+    doIfEnabled :: Bool -> Maybe a -> Maybe a
+    doIfEnabled True x = x
+    doIfEnabled False _ = Nothing
 
     fullCoverage :: Maybe (SegmentType, [IntLabel]) -> Maybe (SegmentType, [IntLabel])
     fullCoverage res@(Just (_, [])) = res
@@ -1426,19 +1458,11 @@ createBitTestPlanType2 :: Integer
                        -> Integer
                        -> Label
                        -> Integer
-                       -> [[IntLabel]]
-                       -> Bool
+                       -> [(Label, [Integer])]
                        -> SwitchPlan
-createBitTestPlanType2 regionLb regionUb otherLabel bitsInWord caseIntLabels hasDefault
-  = let      
-      ls = L.map (\xs -> (snd . L.head $ xs, L.map fst xs)) caseIntLabels
-      sortedOnLengthAux = L.sortOn (Order.Down . L.length . snd) ls -- sortOn only evaluates the list length once per element (decorate, sort, undecorate)
-
-      sortedOnLength | hasDefault = sortedOnLengthAux
-                     | otherwise = L.init sortedOnLengthAux
-
-      labels = L.map fst sortedOnLength
-      nns = L.map snd sortedOnLength
+createBitTestPlanType2 regionLb regionUb otherLabel bitsInWord caseIntLabels
+  = let
+      (labels, nns) = L.unzip caseIntLabels
 
       canSkipOffset = regionLb >= 0 && 2 * regionUb < bitsInWord
       (offset2, constants) =
@@ -1461,6 +1485,17 @@ createEqPlan labelInts lab1 lab2 =
 createEqPlanWithPlan :: [Integer] -> Label -> SwitchPlan -> SwitchPlan
 createEqPlanWithPlan labelInts thenLabel elsePlan =
   F.foldr' (`IfEqual` thenLabel) elsePlan labelInts
+
+createSidePlans :: Integer -> Integer -> Integer -> Integer -> Label -> (Maybe SwitchPlan, Maybe SwitchPlan)
+createSidePlans currentLb currentUb segmentLb segmentUb label
+  = let
+      otherLabelPlan = Just . Unconditionally $ label
+      leftPlanOpt | segmentLb /= currentLb = otherLabelPlan
+                  | otherwise = Nothing
+      rightPlanOpt | segmentUb /= currentUb = otherLabelPlan
+                   | otherwise = Nothing
+    in
+      (leftPlanOpt, rightPlanOpt)
 
 ccp :: Integer
     -> Integer
@@ -1566,14 +1601,10 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
           [_, _] -> createEqPlan casesInts labelForCases otherLabel -- The invariant is if you are outside the segment you always go to default
                                                                     -- and here `otherLabel` equals the default label (if it exists).
           _      -> let
-                      otherLabelPlan = Just . Unconditionally $ otherLabel
-                      leftPlan2Opt  | segLb /= currentLb = otherLabelPlan
-                                    | otherwise = Nothing
-                      rightPlan2Opt | segUb /= currentUb = otherLabelPlan
-                                    | otherwise = Nothing
+                      (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb otherLabel
                       bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
                     in
-                      createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan segLb segUb          
+                      createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
       where
         casesInts = L.map fst casesForTest
 
@@ -1591,28 +1622,28 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
           [_]    -> createEqPlan casesInts labelForCases otherLabel
           [_, _] -> createEqPlan casesInts labelForCases otherLabel
           _      -> let
-                      otherLabelPlan = Just . Unconditionally $ otherLabel
-                      leftPlan2Opt  | lbForTest /= currentLb = otherLabelPlan
-                                    | otherwise = Nothing
-                      rightPlan2Opt | ubForTest /= currentUb = otherLabelPlan
-                                    | otherwise = Nothing
+                      (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb lbForTest ubForTest otherLabel
                       bitTestPlan = createBitTestPlan labelForCases casesInts lbForTest ubForTest otherLabel bitsInWord
                     in
-                      createBracketPlan signed leftPlan2Opt rightPlan2Opt bitTestPlan lbForTest ubForTest
+                      createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan lbForTest ubForTest
       where
         casesInts = L.map fst casesForTest
 
     compileFourLabelsSegment :: Integer
                              -> Integer
-                             -> Int
                              -> Integer
                              -> Integer
-                             -> [[IntLabel]]
-                             -> Maybe Label
+                             -> [(Label, [Integer])]
+                             -> Label
                              -> SwitchPlan
-    compileFourLabelsSegment currentLb currentUb segSize segLb segUb fourLabelCases fourLabelOtherLabel
-      = undefined 
-      
+    compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
+      = case fourLabelCases of
+          [] -> Unconditionally fourLabelOtherLabel
+          _ -> let
+                 (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb fourLabelOtherLabel
+                 bitTestPlan = createBitTestPlanType2 segLb segUb fourLabelOtherLabel bitsInWord fourLabelCases
+               in
+                 createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
 
     compileMultiWayJumpSegment :: Integer
                                -> Integer
@@ -1665,13 +1696,12 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
           = compileTwoLabelsType2Segment currentLb currentUb labelForCases casesForTest lbForTest ubForTest otherLabel
 
         go FourLabels {
-             segSize = segSize
-           , segLb = segLb
+             segLb = segLb
            , segUb = segUb
            , fourLabelCases = fourLabelCases
            , fourLabelOtherLabel = fourLabelOtherLabel
            }
-          = compileFourLabelsSegment currentLb currentUb segSize segLb segUb fourLabelCases fourLabelOtherLabel
+          = compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
 
         go MultiWayJump {
              segSize = segSize
