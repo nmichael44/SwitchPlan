@@ -1232,17 +1232,31 @@ getFourLabelSegment bitsInWord intLabelList defOpt
     mkSegment segSize segUb m rest
       | segSize < minBitTestSize = Nothing
       | otherwise
-        = let
-                                         -- Here we can do better by noticing if the interval is dense or not
-                                         -- In that case we can never go to default (if we are in the region)
-                                         -- so we can skip one of the `else if` statements.
-                                         -- We leave this for future work.
-            otherLabel
-              = case defOpt of
-                  Just defLabel -> defLabel
-                  Nothing -> findLabelWithMinimumCases m
+        = let  -- Here we shave off an extra `else if` statement by noticing the case when the interval is dense.
+               -- In that case we can never go to default (if we are in the region)
+               -- so we can skip one of the `else if` statements.
+            intervalIsDense = segSize == fromIntegral (U.rangeSpan startNum segUb)
             
-            m' = M.delete otherLabel m
+            (otherLabel, m')
+              = case defOpt of
+                  Just defLabel
+                    -> let
+                         m1 = M.delete defLabel m
+                         noDefaultCasesFound = L.null $ (M.!) m defLabel
+                       in
+                         if intervalIsDense && noDefaultCasesFound
+                         then let
+                               lab = findLabelWithMinimumCases m1
+                               m2 = M.delete lab m1
+                             in
+                               (lab, m2)
+                         else (defLabel, m1)
+                  Nothing
+                    -> let
+                         lab = findLabelWithMinimumCases m
+                         m1 = M.delete lab m
+                       in
+                         (lab, m1)
 
             caseLists :: [(Label, [Integer])]
             caseLists
@@ -1263,9 +1277,8 @@ getFourLabelSegment bitsInWord intLabelList defOpt
         findLabelWithMinimumCases m
           = let
               xs = L.map (\(lab, ns) -> (L.length ns, lab)) $ M.toList m
-              minPair = L.minimumBy (compare `Func.on` fst) xs
             in
-              snd minPair
+              snd $ L.minimumBy (compare `Func.on` fst) xs
 
     addToMap :: IntLabel -> Maybe [IntLabel] -> Maybe [IntLabel]
     addToMap p xs
@@ -1289,7 +1302,7 @@ getFourLabelSegment bitsInWord intLabelList defOpt
             || totalSpan > bitsAvailable -- Idea for later:
                                          -- Here we can potentially ignore n's that
                                          -- go to the default label if there is one.
-                                         -- We leave this optimization it for future work.
+                                         -- We leave this optimization for future work.
           then mkSegment segSize segUb m xs
           else
             let
