@@ -1518,16 +1518,16 @@ ccp :: Integer
     -> Maybe Label
     -> SwitchPlan
 ccp regionLb regionUb intLabels bitsInWord signed defLabelOpt
- = createPlan' bitsInWord regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt) signed defLabelOpt
+ = createPlan' signed bitsInWord regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt)
 
-createPlan' :: Integer -> Integer -> Integer -> [SegmentType] -> Bool -> Maybe Label -> SwitchPlan
-createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
+createPlan' :: Bool -> Integer -> Integer -> Integer -> [SegmentType] -> SwitchPlan
+createPlan' signed bitsInWord regionLb regionUb allSegments
   = go allSegments globalTotalSize regionLb regionUb
   where
     globalTotalSize = L.foldl' (+) 0 $ L.map segSize allSegments
 
     go :: [SegmentType] -> Int -> Integer -> Integer -> SwitchPlan
-    go [seg] _ lb ub = compileSegment seg lb ub defOpt
+    go [seg] _ lb ub = compileSegment seg lb ub
     go segments !totalSize !lb !ub
       = let
           (segmentsLeft, segmentLeftSize, segmentsRight, segmentRightSize)
@@ -1660,24 +1660,23 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
 
     compileMultiWayJumpSegment :: Integer
                                -> Integer
-                               -> Int
-                               -> Integer
-                               -> Integer
                                -> [IntLabel]
                                -> Maybe Label
                                -> SwitchPlan
-    compileMultiWayJumpSegment currentLb currentUb segSize segLb segUb cases multiWayJumpOtherLabel
-      = undefined
+    compileMultiWayJumpSegment currentLb currentUb cases multiWayJumpOtherLabel
+      = let
+          mp = M.fromDistinctAscList cases
+          st = SwitchTargets signed (currentLb, currentUb) multiWayJumpOtherLabel mp M.empty
+        in
+          JumpTable st
 
-    compileSegment :: SegmentType -> Integer -> Integer -> Maybe Label -> SwitchPlan
-    compileSegment segment currentLb currentUb defOpt
+    compileSegment :: SegmentType -> Integer -> Integer -> SwitchPlan
+    compileSegment segment currentLb currentUb
       = go segment
       where
         go :: SegmentType -> SwitchPlan
         go SimpleRegion {
              label = label
-           , segLb = _
-           , segUb = _
            }
           = compileSimpleRegionSegment label
 
@@ -1717,13 +1716,10 @@ createPlan' bitsInWord regionLb regionUb allSegments signed defOpt
           = compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
 
         go MultiWayJump {
-             segSize = segSize
-           , segLb = segLb
-           , segUb = segUb
-           , cases = cases
+             cases = cases
            , multiWayJumpOtherLabel = multiWayJumpOtherLabel
            }
-          = compileMultiWayJumpSegment currentLb currentUb segSize segLb segUb cases multiWayJumpOtherLabel
+          = compileMultiWayJumpSegment currentLb currentUb cases multiWayJumpOtherLabel
 
         go _ = U.impossible ()
 {-
