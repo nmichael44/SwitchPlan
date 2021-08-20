@@ -1370,8 +1370,8 @@ findSegment bitsInWord defOpt intLabelList =
     contiguousSegmentEnabled     = False
     twoLabelsType1SegmentEnabled = False
     twoLabelsType2SegmentTrue    = False
-    fourLabelSegmentEnabled      = True
-    multiWayJumpSegmentEnabled   = False
+    fourLabelSegmentEnabled      = False
+    multiWayJumpSegmentEnabled   = True
 
     contSeg      = doIfEnabled contiguousSegmentEnabled     $ getContiguousSegment intLabelList defOpt
     btType1      = doIfEnabled twoLabelsType1SegmentEnabled $ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
@@ -1722,63 +1722,8 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
           = compileMultiWayJumpSegment currentLb currentUb cases multiWayJumpOtherLabel
 
         go _ = U.impossible ()
-{-
-
-createPlanForIsolatedSegment :: Maybe Label -> [IntLabel] -> SwitchPlan
-createPlanForIsolatedSegment defOpt intLabelList =
-  undefined
-  where
-
-createPlanFromSegment :: Maybe Label -> SegmentTypeWithSize -> SwitchPlan
-createPlanFromSegment defOpt seg =
-  undefined
-  where
-    go (IsolatedValuesSegment {}) =
-      undefined
-    go (BitTestType1Segment {}) =
-      undefined
-    go (BitTestType2Segment {}) =
-      undefined
-    go (MultiWayJumpSegment {}) =
-      undefined
-
-createPlanFromSegments :: Maybe Label -> [SegmentTypeWithSize] -> SwitchPlan
-createPlanFromSegments defOpt intLabelList =
-  undefined
-  where
-    numCases = countCases intLabelList
-
-    (prefix, (maxSegmentSize, maxSegment), postfix) = findMiddleSegment numCases intLabelList
-
-    countCases :: [SegmentTypeWithSize] -> Int
-    countCases = L.foldl' (\acc (n, _) -> acc + n) 0
 
 {-
-    findMaxSegment :: [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
-    findMaxSegment [] = error "Should never happen"
-    findMaxSegment (seg : segs)
-      = go segs [] ([], seg, segs)
-      where
-        go :: [SegmentTypeWithSize] -> [SegmentTypeWithSize] -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
-              -> ([SegmentTypeWithSize], SegmentTypeWithSize, [SegmentTypeWithSize])
-        go [] _ (pre, seg, post) = (reverse pre, seg, post)
-        go (segment@(currentSize, _) : segments) pre maxSoFar@(_, (maxSizeSoFar, _), _)
-          = go segments (segment : pre) (if currentSize > maxSizeSoFar then (pre, segment, segments) else maxSoFar)
--}
-createPlan' :: Integer -> SwitchTargets -> Platform -> SwitchPlan
-createPlan' bitsInWord st platform =
-  undefined
-  where
-    defOpt :: Maybe Label
-    defOpt = Nothing
-
-    mkPlan :: [SegmentType] -> SwitchPlan
-    mkPlan segmentList = undefined
-
-    segmentToPlan :: SegmentType -> SwitchPlan
-    segmentToPlan segmentType = undefined
-
-
 cs0 :: [(Integer, Label)]
 cs0 = [(1, lab1), (2, lab2), (3, lab1), (30, lab2), (40, lab1), (64, lab2)]
 
