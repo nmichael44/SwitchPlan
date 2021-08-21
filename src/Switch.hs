@@ -393,8 +393,8 @@ pNumerator = 1
 pDenominator :: Int
 pDenominator = 2
 
-maxJumpTableHole :: Integer
-maxJumpTableHole = 7
+maxJumpTableHoleSize :: Integer
+maxJumpTableHoleSize = 4
 
 minJumpTableSize :: Int
 minJumpTableSize = 5
@@ -426,13 +426,13 @@ createJumpTableAux st@(SwitchTargets _signed _range _defLabelOpt intToLabel _lab
   let numCases = M.size intToLabel
    in if
           | numCases < minJumpTableSize -> Nothing
-          | hasBeenExpanded || U.isDenseEnough maxJumpTableHole (M.keys intToLabel) -> Just $ JumpTable st
+          | hasBeenExpanded || U.isDenseEnough maxJumpTableHoleSize (M.keys intToLabel) -> Just $ JumpTable st
           | otherwise -> Nothing
 
 splitInterval :: SwitchTargets -> (SwitchTargets, Integer, SwitchTargets)
 splitInterval (SwitchTargets signed (lb, ub) defLabelOpt intToLabel _labelToInts) =
   let caseInts = M.keys intToLabel
-      regionSeparators = U.findRegionSeparators maxJumpTableHole caseInts
+      regionSeparators = U.findRegionSeparators maxJumpTableHoleSize caseInts
       midSeparator = U.findMiddleOfList regionSeparators
 
       (intToLabelLeft, intToLabelRight) = U.splitMap midSeparator intToLabel U.RightMap
@@ -1236,7 +1236,7 @@ getFourLabelSegment bitsInWord intLabelList defOpt
                -- In that case we can never go to default (if we are in the region)
                -- so we can skip one of the `else if` statements.
             intervalIsDense = segSize == fromIntegral (U.rangeSpan startNum segUb)
-            
+
             (otherLabel, m')
               = case defOpt of
                   Just defLabel
@@ -1276,9 +1276,9 @@ getFourLabelSegment bitsInWord intLabelList defOpt
         findLabelWithMinimumCases :: M.Map Label [IntLabel] -> Label
         findLabelWithMinimumCases m
           = let
-              xs = L.map (\(lab, ns) -> (L.length ns, lab)) $ M.toList m
+              xs = L.map (BiFunc.second L.length) $ M.toList m
             in
-              snd $ L.minimumBy (compare `Func.on` fst) xs
+              fst $ L.minimumBy (compare `Func.on` snd) xs
 
     addToMap :: IntLabel -> Maybe [IntLabel] -> Maybe [IntLabel]
     addToMap p xs
@@ -1339,8 +1339,10 @@ getMultiWayJumpSegment intLabelList defOpt =
     go previous [] segSiz res = (segSiz, previous, res, [])
 
     go previous ls@(p@(n, _) : restIntLabel) !segSiz res
-      | n - previous >= maxJumpTableHole = (segSiz, previous, res, ls)
+      | holeSize > maxJumpTableHoleSize = (segSiz, previous, res, ls)
       | otherwise = go n restIntLabel (segSiz + 1) (p : res)
+      where
+        holeSize = n - previous - 1
 
 findSegment :: Integer -> Maybe Label -> [IntLabel] -> (SegmentType, [IntLabel])
 findSegment bitsInWord defOpt intLabelList =
