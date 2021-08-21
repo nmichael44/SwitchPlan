@@ -1442,12 +1442,12 @@ createBracketPlan :: Bool
                   -> Integer
                   -> Integer
                   -> SwitchPlan
-createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt bitTestPlan lb ub =
+createBracketPlan signed leftBracketPlanOpt rightBracketPlanOpt middlePlan lb ub =
   case (leftBracketPlanOpt, rightBracketPlanOpt) of
-    (Just leftPlan, Just rightPlan) -> IfLT signed lb leftPlan (IfLE signed ub bitTestPlan rightPlan)
-    (Just leftPlan, Nothing) -> IfLT signed lb leftPlan bitTestPlan
-    (Nothing, Just rightPlan) -> IfLE signed ub bitTestPlan rightPlan
-    (Nothing, Nothing) -> bitTestPlan
+    (Just leftPlan, Just rightPlan) -> IfLT signed lb leftPlan (IfLE signed ub middlePlan rightPlan)
+    (Just leftPlan, Nothing) -> IfLT signed lb leftPlan middlePlan
+    (Nothing, Just rightPlan) -> IfLE signed ub middlePlan rightPlan
+    (Nothing, Nothing) -> middlePlan
 
 createBitTestPlan :: Label -> [Integer] -> Integer -> Integer -> Label -> Integer -> SwitchPlan
 createBitTestPlan bitTestLabel intsOfLabel regionLb regionUb otherLabel bitsInWord =
@@ -1548,11 +1548,10 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
                                     -> Integer
                                     -> Integer
                                     -> Integer
-                                    -> Int
                                     -> [ContiguousSegment]
                                     -> Maybe Label
                                     -> SwitchPlan
-    compileContinuousRegionsSegment currentLb currentUb segLb segUb numberOfSegments contiguousSegments defLabelOpt
+    compileContinuousRegionsSegment currentLb currentUb segLb segUb contiguousSegments defLabelOpt
       = case (contiguousSegments, defLabelOpt) of
           -- We had a default label AND all cases present were going to it.
           -- This is the degenerate case but possible as a result of this algorithm; not possible directly from the user program.
@@ -1569,7 +1568,7 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
                            ((currentLb - 1, seg) : L.zipWith (curry (BiFunc.first cSegUb)) segs (tail segs))
 
           (ContiguousSegment { cSegLabel = cSegLabel } : rest, Nothing)
-            -> compileContinuousRegionsSegment currentLb currentUb segLb segUb (numberOfSegments - 1) rest $ Just cSegLabel
+            -> compileContinuousRegionsSegment currentLb currentUb segLb segUb rest $ Just cSegLabel
       where
         accum :: SwitchPlan -> (Integer, ContiguousSegment) -> (SwitchPlan, Bool) -> (SwitchPlan, Bool)
         accum defLabelPlan
@@ -1660,15 +1659,24 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
 
     compileMultiWayJumpSegment :: Integer
                                -> Integer
+                               -> Integer
+                               -> Integer
                                -> [IntLabel]
                                -> Maybe Label
                                -> SwitchPlan
-    compileMultiWayJumpSegment currentLb currentUb cases multiWayJumpOtherLabel
+    compileMultiWayJumpSegment currentLb currentUb segLb segUb cases multiWayJumpOtherLabel
       = let
           mp = M.fromDistinctAscList cases
           st = SwitchTargets signed (currentLb, currentUb) multiWayJumpOtherLabel mp M.empty
+          jumpTablePlan = JumpTable st
         in
-          JumpTable st
+          case multiWayJumpOtherLabel of
+            Nothing -> jumpTablePlan
+            Just defLabel ->
+              let
+                (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb defLabel
+              in
+                createBracketPlan signed leftPlanOpt rightPlanOpt jumpTablePlan segLb segUb
 
     compileSegment :: SegmentType -> Integer -> Integer -> SwitchPlan
     compileSegment segment currentLb currentUb
@@ -1683,11 +1691,10 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
         go ContiguousRegions {
              segLb = segLb
            , segUb = segUb
-           , numberOfSegments = numberOfSegments
            , contiguousSegments = contiguousSegments
            , defLabel = defLabel
            }
-          = compileContinuousRegionsSegment currentLb currentUb segLb segUb numberOfSegments contiguousSegments defLabel
+          = compileContinuousRegionsSegment currentLb currentUb segLb segUb contiguousSegments defLabel
 
         go TwoLabelsType1 {
              segLb = segLb
@@ -1716,10 +1723,12 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
           = compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
 
         go MultiWayJump {
-             cases = cases
+             segLb = segLb
+           , segUb = segUb
+           , cases = cases
            , multiWayJumpOtherLabel = multiWayJumpOtherLabel
            }
-          = compileMultiWayJumpSegment currentLb currentUb cases multiWayJumpOtherLabel
+          = compileMultiWayJumpSegment currentLb currentUb segLb segUb cases multiWayJumpOtherLabel
 
         go _ = U.impossible ()
 
