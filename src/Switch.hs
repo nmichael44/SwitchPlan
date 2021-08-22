@@ -1846,8 +1846,6 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
            }
           = compileMultiWayJumpSegment currentLb currentUb segLb segUb cases multiWayJumpOtherLabel
 
-        go _ = U.impossible ()
-
 {-
 cs0 :: [(Integer, Label)]
 cs0 = [(1, lab1), (2, lab2), (3, lab1), (30, lab2), (40, lab1), (64, lab2)]
