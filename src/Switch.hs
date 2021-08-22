@@ -754,14 +754,7 @@ instance Show ContiguousSegment where
       ++ ", Cases: " ++ show cSegCases ++ "]"
 
 data SegmentType
-  = IsolatedValues {
-      segSize :: Int
-    , segLb :: Integer
-    , segUb :: Integer
-    , casesAreDense :: Bool
-    , cases :: [IntLabel]
-    }
-  |  SimpleRegion { -- It doesn't matter what the input expression is.  Always go to `label`.
+  = SimpleRegion { -- It doesn't matter what the input expression is.  Always go to `label`.
       label :: Label
     , segLb :: Integer
     , segUb :: Integer
@@ -778,9 +771,9 @@ data SegmentType
       segSize :: Int
     , segLb :: Integer
     , segUb :: Integer
-    , labelForCases :: Label
-    , casesForTest :: [IntLabel]
-    , otherLabel :: Label
+    , twoLabelCases :: [(Label, [Integer])]
+    , twoLabelsOtherLabel :: Label
+    , twoLabelDefLabel :: Maybe Label
     }
   | TwoLabelsType2 {
       segSize :: Int
@@ -799,6 +792,7 @@ data SegmentType
     , segUb :: Integer
     , fourLabelCases :: [(Label, [Integer])]
     , fourLabelOtherLabel :: Label
+    , fourLabelDefLabel :: Maybe Label
     }
   | MultiWayJump {
       segSize :: Int
@@ -862,24 +856,6 @@ findFirstNLabels numLabels xs m
 
 minBitTestSize :: Int
 minBitTestSize = 4
-
-mergeConsecutiveIsolatedSegments :: [SegmentType] -> [SegmentType]
-mergeConsecutiveIsolatedSegments
-  = F.foldr' mergeSegments []  -- foldr here to avoid the O(n^2) cost with the append of the 'cases' lists.
-  where
-    mergeSegments :: SegmentType -> [SegmentType] -> [SegmentType]
-    mergeSegments IsolatedValues { segSize = segSize1, segLb = segLb1, segUb = segUb1, casesAreDense = casesAreDense1, cases = cases1 }
-                  (IsolatedValues { segSize = segSize2, segLb = segLb2, segUb = segUb2, casesAreDense = casesAreDense2, cases = cases2 } : rest)
-      = IsolatedValues {
-          segSize = segSize1 + segSize2
-        , segLb = segLb1
-        , segUb = segUb2
-        , casesAreDense = casesAreDense1
-                          && casesAreDense2
-                          && segUb1 + 1 == segLb2
-        , cases = cases1 ++ cases2
-        } : rest
-    mergeSegments segment segments = segment : segments
 
 maxNumberOfLabelContiguousRegions :: Int
 maxNumberOfLabelContiguousRegions = 3
@@ -989,6 +965,31 @@ getTwoLabelsType1Segment :: Integer
                          -> Maybe Label
                          -> Maybe (SegmentType, [IntLabel])
 getTwoLabelsType1Segment bitsInWord intLabelList defOpt
+  | segSize < minBitTestSize = Nothing
+  | otherwise = Just (segment, rest)
+  where
+    labelCount = 2
+    spanAcceptablePred start end = U.rangeSpan start end <= bitsInWord
+
+    (segLb, segUb, segSize, isDense, otherLabel, m, rest)
+      = getSegment intLabelList labelCount spanAcceptablePred findLabelWithGreatestFrequency defOpt
+
+    caseList = M.toList m
+
+    segment = TwoLabelsType1 {
+                segSize = segSize
+              , segLb = segLb
+              , segUb = segUb
+              , twoLabelCases = caseList
+              , twoLabelsOtherLabel = otherLabel
+              , twoLabelDefLabel = defOpt
+              }
+{-
+getTwoLabelsType1Segment' :: Integer
+                         -> [IntLabel]
+                         -> Maybe Label
+                         -> Maybe (SegmentType, [IntLabel])
+getTwoLabelsType1Segment' bitsInWord intLabelList defOpt
   = go (tail intLabelList) labelSet 1 startNum [startIntLabel]
   where
     startIntLabel@(startNum, startLabel) = head intLabelList
@@ -1072,6 +1073,7 @@ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
         , casesForTest = L.reverse casesForTest
         , otherLabel = otherLabel
         }
+-}
 
 getTwoLabelsType2Segment :: Integer
                          -> [IntLabel]
@@ -1205,17 +1207,116 @@ getTwoLabelsType2Segment bitsInWord intLabelList defOpt
           , otherLabel = otherLabel'
         }
 
--- Idea for later:
--- In the presense of a default, if we have an interval with no gaps
--- in the integers then we can do Four labels without one of them having
--- to be equal to the default as this code requires.
--- We leave this for future work.
+data Frequency = Least | Greatest
+
+findLabelWith :: Frequency -> M.Map Label [Integer] -> Label
+findLabelWith freq m
+  = let
+      xs = L.map (BiFunc.second L.length) $ M.toList m
+      fn = case freq of { Least -> L.minimumBy; Greatest -> L.maximumBy }
+    in
+      fst $ fn (compare `Func.on` snd) xs
+
+findLabelWithLeastFrequency :: M.Map Label [Integer] -> Label
+findLabelWithLeastFrequency = findLabelWith Least
+
+findLabelWithGreatestFrequency :: M.Map Label [Integer] -> Label
+findLabelWithGreatestFrequency = findLabelWith Greatest
+
+getSegment :: [IntLabel]
+           -> Int
+           -> (Integer -> Integer -> Bool)
+           -> (M.Map Label [Integer] -> Label)
+           -> Maybe Label
+           -> (Integer   -- segLb
+             , Integer   -- segUb
+             , Int       -- segSize
+             , Bool      -- isDense
+             , Label     -- otherLabel
+             , M.Map Label [Integer], [IntLabel])
+getSegment intLabelList labelCount spanAcceptablePred pickLabelToEject defOpt
+  = (segLb, segUb, segmentSize, isDense, otherLabel, mfinal, rest)
+  where
+    (startNum, startLabel) = head intLabelList
+
+    segLb = startNum
+    (segUb, segmentSize, isDense, m, rest)
+      = go (tail intLabelList) startNum 1 True
+          $ M.singleton startLabel [startNum]
+
+    m' = M.map L.reverse m
+    (otherLabel, mfinal)
+      | isDense = let
+                    lab = pickLabelToEject m'
+                  in
+                    (lab, M.delete lab m')
+      | otherwise = case defOpt of
+                      Just defLabel -> (defLabel, m')
+                      Nothing -> U.impossible ()
+
+    go :: [IntLabel]
+       -> Integer
+       -> Int
+       -> Bool
+       -> M.Map Label [Integer]
+       -> (Integer, Int, Bool, M.Map Label [Integer], [IntLabel])
+    go [] prev segSize isDense m = (prev, segSize, isDense, m, [])
+    go xs@((n, lab) : restIntLabel) prev !segSize isDense m
+      = if not $ spanAcceptablePred startNum n
+        then (prev, segSize, isDense, m, xs)
+        else let
+               isDense' = isDense && prev + 1 == n
+               m' = M.alter (addToMap n) lab m
+             in
+               if | M.size m' < labelCount
+                    -> go restIntLabel n (segSize + 1) isDense' m'
+                  | M.size m' == labelCount
+                    -> if not isDense'
+                       then (prev, segSize, isDense, m, xs)
+                       else go restIntLabel n (segSize + 1) isDense' m'
+                  | otherwise
+                    -> (prev, segSize, isDense, m, xs)
+
+    addToMap :: Integer -> Maybe [Integer] -> Maybe [Integer]
+    addToMap p xs
+      = Just $ h xs
+      where h Nothing = [p]
+            h (Just ys) = p : ys
 
 getFourLabelSegment :: Integer
                     -> [IntLabel]
                     -> Maybe Label
                     -> Maybe (SegmentType, [IntLabel])
 getFourLabelSegment bitsInWord intLabelList defOpt
+  | segSize < minBitTestSize = Nothing
+  | otherwise = Just (segment, rest)
+  where
+    bitsAvailable = bitsInWord `div` 2
+    
+    labelCount = 4
+    spanAcceptablePred start end = U.rangeSpan start end <= bitsAvailable
+
+    (segLb, segUb, segSize, isDense, otherLabel, m, rest)
+      = getSegment intLabelList labelCount spanAcceptablePred findLabelWithLeastFrequency defOpt
+
+    labelCases :: [(Label, [Integer])]
+    labelCases = L.sortOn (Order.Down . L.length . snd) $ M.toList m
+
+    segment = FourLabels {
+                segSize = segSize
+              , segLb = segLb
+              , segUb = segUb
+              , fourLabelCases = labelCases
+              , fourLabelOtherLabel = otherLabel
+              , fourLabelDefLabel = defOpt
+              }
+
+{-
+getFourLabelSegment' :: Integer
+                     -> [IntLabel]
+                     -> Maybe Label
+                     -> Maybe (SegmentType, [IntLabel])
+getFourLabelSegment' bitsInWord intLabelList defOpt
   = go (tail intLabelList) 1 startNum initialMap
   where
     bitsAvailable = bitsInWord `div` 2
@@ -1246,14 +1347,14 @@ getFourLabelSegment bitsInWord intLabelList defOpt
                        in
                          if intervalIsDense && noDefaultCasesFound
                          then let
-                               lab = findLabelWithMinimumCases m1
+                               lab = undefined -- findLabelWithMinimumCases m1
                                m2 = M.delete lab m1
                              in
                                (lab, m2)
                          else (defLabel, m1)
                   Nothing
                     -> let
-                         lab = findLabelWithMinimumCases m
+                         lab = undefined -- findLabelWithMinimumCases m
                          m1 = M.delete lab m
                        in
                          (lab, m1)
@@ -1272,13 +1373,6 @@ getFourLabelSegment bitsInWord intLabelList defOpt
                , fourLabelOtherLabel = otherLabel
                },
                rest)
-      where
-        findLabelWithMinimumCases :: M.Map Label [IntLabel] -> Label
-        findLabelWithMinimumCases m
-          = let
-              xs = L.map (BiFunc.second L.length) $ M.toList m
-            in
-              fst $ L.minimumBy (compare `Func.on` snd) xs
 
     addToMap :: IntLabel -> Maybe [IntLabel] -> Maybe [IntLabel]
     addToMap p xs
@@ -1310,6 +1404,7 @@ getFourLabelSegment bitsInWord intLabelList defOpt
               segUb' = n
             in
               go restIntLabel segSize' segUb' m'
+-}
 
 getMultiWayJumpSegment :: [IntLabel] -> Maybe Label -> Maybe (SegmentType, [IntLabel])
 getMultiWayJumpSegment intLabelList defOpt =
@@ -1372,8 +1467,8 @@ findSegment bitsInWord defOpt intLabelList =
     contiguousSegmentEnabled     = False
     twoLabelsType1SegmentEnabled = False
     twoLabelsType2SegmentTrue    = False
-    fourLabelSegmentEnabled      = False
-    multiWayJumpSegmentEnabled   = True
+    fourLabelSegmentEnabled      = True
+    multiWayJumpSegmentEnabled   = False
 
     contSeg      = doIfEnabled contiguousSegmentEnabled     $ getContiguousSegment intLabelList defOpt
     btType1      = doIfEnabled twoLabelsType1SegmentEnabled $ getTwoLabelsType1Segment bitsInWord intLabelList defOpt
@@ -1519,8 +1614,14 @@ ccp :: Integer
     -> Bool
     -> Maybe Label
     -> SwitchPlan
-ccp regionLb regionUb intLabels bitsInWord signed defLabelOpt
- = createPlan' signed bitsInWord regionLb regionUb (splitIntoSegments intLabels bitsInWord defLabelOpt)
+ccp regionLb regionUb intLabels bitsInWord signed defOpt
+  = let
+      intLabels'
+        | Just defLabel <- defOpt = L.filter ((/= defLabel) . snd) intLabels
+        | otherwise = intLabels
+    in
+      createPlan' signed bitsInWord regionLb regionUb
+                  (splitIntoSegments intLabels' bitsInWord defOpt)
 
 createPlan' :: Bool -> Integer -> Integer -> Integer -> [SegmentType] -> SwitchPlan
 createPlan' signed bitsInWord regionLb regionUb allSegments
@@ -1604,23 +1705,29 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
                                  -> Integer
                                  -> Integer
                                  -> Integer
+                                 -> [(Label, [Integer])]
                                  -> Label
-                                 -> [IntLabel]
-                                 -> Label
+                                 -> Maybe Label
                                  -> SwitchPlan
-    compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel
-      = case casesInts of
-          []     -> U.impossible ()
-          [_]    -> createEqPlan casesInts labelForCases otherLabel -- If we can match the segment by equality we don't need the boundary checks.
-          [_, _] -> createEqPlan casesInts labelForCases otherLabel -- The invariant is if you are outside the segment you always go to default
-                                                                    -- and here `otherLabel` equals the default label (if it exists).
-          _      -> let
-                      (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb otherLabel
-                      bitTestPlan = createBitTestPlan labelForCases casesInts segLb segUb otherLabel bitsInWord
-                    in
-                      createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
-      where
-        casesInts = L.map fst casesForTest
+    compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelCases otherLabel defOpt
+      = case labelCases of
+          []     -> Unconditionally otherLabel
+                                     -- If we can match the segment by equality we don't need the boundary checks.
+          [(lab, casesInts@[_])] -> createEqPlan casesInts lab otherLabel
+          [(lab, casesInts@[_, _])] -> createEqPlan casesInts lab otherLabel
+          [(lab, casesInts)]
+            -> let
+                 bitTestPlan = createBitTestPlan lab casesInts segLb segUb otherLabel bitsInWord
+               in
+                 case defOpt of
+                   Nothing -> bitTestPlan
+                   Just defLabel
+                     -> let
+                          (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb defLabel
+                 
+                        in
+                          createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
+          _ -> U.impossible ()
 
     compileTwoLabelsType2Segment :: Integer
                                  -> Integer
@@ -1649,15 +1756,21 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
                              -> Integer
                              -> [(Label, [Integer])]
                              -> Label
+                             -> Maybe Label
                              -> SwitchPlan
-    compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
-      = case fourLabelCases of
-          [] -> Unconditionally fourLabelOtherLabel
-          _ -> let
-                 (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb fourLabelOtherLabel
-                 bitTestPlan = createBitTestPlanType2 segLb segUb fourLabelOtherLabel bitsInWord fourLabelCases
+    compileFourLabelsSegment currentLb currentUb segLb segUb labelCases otherLabel defOpt
+      = case labelCases of
+          [] -> Unconditionally otherLabel
+          _ -> let 
+                 bitTestPlan = createBitTestPlanType2 segLb segUb otherLabel bitsInWord labelCases
                in
-                 createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
+                 case defOpt of
+                   Nothing -> bitTestPlan
+                   Just defLabel
+                     -> let
+                          (leftPlanOpt, rightPlanOpt) = createSidePlans currentLb currentUb segLb segUb defLabel
+                        in
+                          createBracketPlan signed leftPlanOpt rightPlanOpt bitTestPlan segLb segUb
 
     compileMultiWayJumpSegment :: Integer
                                -> Integer
@@ -1701,11 +1814,11 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
         go TwoLabelsType1 {
              segLb = segLb
            , segUb = segUb
-           , labelForCases = labelForCases
-           , casesForTest = casesForTest
-           , otherLabel = otherLabel
+           , twoLabelCases = labelCases
+           , twoLabelsOtherLabel = otherLabel
+           , twoLabelDefLabel = defOpt
            }
-          = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelForCases casesForTest otherLabel
+          = compileTwoLabelsType1Segment currentLb currentUb segLb segUb labelCases otherLabel defOpt
 
         go TwoLabelsType2 {
              labelForCases = labelForCases
@@ -1719,10 +1832,11 @@ createPlan' signed bitsInWord regionLb regionUb allSegments
         go FourLabels {
              segLb = segLb
            , segUb = segUb
-           , fourLabelCases = fourLabelCases
-           , fourLabelOtherLabel = fourLabelOtherLabel
+           , fourLabelCases = labelCases
+           , fourLabelOtherLabel = otherLabel
+           , fourLabelDefLabel = defOpt
            }
-          = compileFourLabelsSegment currentLb currentUb segLb segUb fourLabelCases fourLabelOtherLabel
+          = compileFourLabelsSegment currentLb currentUb segLb segUb labelCases otherLabel defOpt
 
         go MultiWayJump {
              segLb = segLb
@@ -1834,3 +1948,10 @@ reassocTuples initial ((a, b) : tuples) last =
   (initial, a) : reassocTuples b tuples last
 
 -}
+
+p :: (Bool, M.Map Label [Integer], [IntLabel]) -> IO ()
+p (isDense, m, rest)
+  = do
+      putStrLn (show isDense)
+      putStrLn (show m)
+      putStrLn (show rest)
